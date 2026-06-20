@@ -14,7 +14,7 @@
   import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
   const firebaseConfig = {
-    apiKey: "AIzaSyDjCn8xov0JegtI2A0iLSQ0jnwmG9Wz4lM",
+    apiKey: "AIzaSyDjCn8xovGJegtI2A0iLSQ0jnwmG9Wz4lM",
     authDomain: "abedoni-4dce1.firebaseapp.com",
     projectId: "abedoni-4dce1",
     storageBucket: "abedoni-4dce1.firebasestorage.app",
@@ -73,7 +73,7 @@
   };
 
   // ── রিয়েলটাইম চ্যাট শোনো ──
-  window.fbListenMessages = function(trackingId, callback) {
+  window.fbListenMessages = function(trackingId, callback, errorCallback) {
     const q = query(
       collection(db, "applications", trackingId, "messages"),
       orderBy("createdAt", "asc")
@@ -81,6 +81,9 @@
     return onSnapshot(q, (snap) => {
       const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       callback(msgs);
+    }, (err) => {
+      console.error("fbListenMessages onSnapshot error:", err);
+      if (typeof errorCallback === 'function') errorCallback(err);
     });
   };
 
@@ -89,6 +92,8 @@
     return onSnapshot(collection(db, "applications"), (snap) => {
       const apps = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       callback(apps);
+    }, (err) => {
+      console.error("fbListenApplications error:", err);
     });
   };
 
@@ -255,6 +260,8 @@
     return onSnapshot(q, (snap) => {
       const reqs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       callback(reqs);
+    }, (err) => {
+      console.error("fbListenPaymentRequests error:", err);
     });
   };
 
@@ -1013,6 +1020,8 @@
     notifUnsub = onSnapshot(collection(db, 'app_notifications'), snap => {
       notifData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       merge();
+    }, (err) => {
+      console.error("fbListenMonthlyData notifications error:", err);
     });
 
     // applications listener
@@ -1020,6 +1029,8 @@
       appData = {};
       snap.docs.forEach(d => { appData[d.id] = d.data(); });
       merge();
+    }, (err) => {
+      console.error("fbListenMonthlyData applications error:", err);
     });
 
     // unsubscribe function ফেরত দাও
@@ -13084,6 +13095,9 @@ function cpSearchApp() {
           cpRenderMessages(cpCurrentApp.messages);
           _cpScrollToBottom();
         }
+      }, function(err) {
+        console.error('cpMessages onSnapshot error:', err);
+        alert('⚠️ ট্র্যাকিং পোর্টাল এরর (মেসেজ): ' + (err && err.code ? err.code : err));
       });
     }
 
@@ -13101,6 +13115,10 @@ function cpSearchApp() {
             cpCurrentApp.statusStep = newStep;
             cpLoadDashboard();
           }
+        },
+        function(err) {
+          console.error('cpStatus onSnapshot error:', err);
+          alert('⚠️ ট্র্যাকিং পোর্টাল এরর (স্ট্যাটাস): ' + (err && err.code ? err.code : err));
         }
       );
     }
@@ -18050,13 +18068,13 @@ async function doLogin() {
   try {
     cred = await window.fbAdminLogin(email, password);
   } catch(e) {
-    document.getElementById('loginError').textContent = '❌ ইমেইল বা পাসওয়ার্ড ভুল।';
+    document.getElementById('loginError').textContent = '❌ এরর কোড: ' + (e && e.code ? e.code : e);
     document.getElementById('loginError').classList.remove('hidden');
     return;
   }
 
   if (!cred) {
-    document.getElementById('loginError').textContent = '❌ ইমেইল বা পাসওয়ার্ড ভুল।';
+    document.getElementById('loginError').textContent = '❌ Auth সফল হয়েছে, কিন্তু Firestore-এ admins ডকুমেন্ট পাওয়া যায়নি (UID মিলছে না বা ডকুমেন্ট নেই)।';
     document.getElementById('loginError').classList.remove('hidden');
     return;
   }
@@ -23165,6 +23183,8 @@ async function submitClientPaymentTrx(pqId) {
               setTimeout(tryRejectUpdate, 1000);
               unsub();
             }
+          }, (err) => {
+            console.error('quotation payment_requests onSnapshot error:', err);
           });
         } catch(_e2) {}
       }
