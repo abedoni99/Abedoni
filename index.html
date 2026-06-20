@@ -319,6 +319,7 @@
           await addDoc(collection(db, "applications", appId, "messages"), {
             from: "admin",
             text: confirmHtml,
+            isHtml: true,
             time: new Date().toTimeString().slice(0,5),
             paymentConfirmed: true,
             createdAt: serverTimestamp()
@@ -370,6 +371,7 @@
           await addDoc(collection(db, "applications", appId, "messages"), {
             from: "admin",
             text: rejectHtml,
+            isHtml: true,
             time: new Date().toTimeString().slice(0,5),
             paymentRejected: true,
             createdAt: serverTimestamp()
@@ -386,7 +388,7 @@
   };
 
   // ── Admin Panel থেকে Client-কে reply (Firebase) — টেক্সট এবং/অথবা ফাইল ──
-  window.fbAdminSendToClient = async function(trackingId, text, file, onProgress) {
+  window.fbAdminSendToClient = async function(trackingId, text, file, onProgress, isHtml) {
     try {
       const now = new Date();
       const time = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
@@ -411,7 +413,7 @@
         fileToSave = file;
       }
       await addDoc(collection(db, "applications", trackingId, "messages"), {
-        from: 'admin', text: text || null, file: fileToSave,
+        from: 'admin', text: text || null, file: fileToSave, isHtml: !!isHtml,
         time, timeStr: time, createdAt: serverTimestamp()
       });
     } catch(e) {
@@ -579,6 +581,7 @@
           id: data.id,
           from: data.from || 'client',
           text: data.text || null,
+          isHtml: data.isHtml || false,
           time: data.time || data.timeStr || 'এইমাত্র',
           file: data.file || null,
           paymentConfirmed: data.paymentConfirmed || false,
@@ -13087,7 +13090,7 @@ function cpSearchApp() {
           .filter(function(m) { return !m.deleted; })
           .filter(function(m) { return !cpHidden.includes(m.id); }) // only-me hide
           .map(function(m) {
-          return { id: m.id, from: m.from||"admin", text: m.text||null, time: m.timeStr||m.time||"এইমাত্র", file: m.file||null, paymentConfirmed: m.paymentConfirmed||false, adminOnly: m.adminOnly||false };
+          return { id: m.id, from: m.from||"admin", text: m.text||null, isHtml: m.isHtml||false, time: m.timeStr||m.time||"এইমাত্র", file: m.file||null, paymentConfirmed: m.paymentConfirmed||false, adminOnly: m.adminOnly||false };
         });
         if (cpCurrentApp) {
           const stillUploading = (cpCurrentApp.messages || []).filter(m => m._optId && m.file && m.file._uploading);
@@ -13668,7 +13671,8 @@ function cpRenderMessages(msgs) {
       }
     } else {
       const txt = m.text || '';
-      const safe = txt.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      // ── isHtml: true (কোটেশন/পেমেন্ট/ডেলিভারি কার্ড) — শুধু এডমিন-পাঠানো বিশ্বস্ত কন্টেন্ট, escape করা হবে না ──
+      const safe = m.isHtml ? txt : txt.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       // Optimistic text — হালকা opacity
       const optStyle = m._optId ? 'opacity:0.75;' : '';
       div.innerHTML = `<div class="cp-msg-bubble" style="${optStyle}">${safe}</div><span class="cp-msg-time">${m.time||''}</span>`;
@@ -20260,7 +20264,8 @@ function renderClientMessages(msgs) {
       }
     } else {
       const txt = m.text || '';
-      const safe = txt.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      // ── isHtml: true (কোটেশন/পেমেন্ট/ডেলিভারি কার্ড) — এডমিন নিজেই পাঠিয়েছে, escape করা হবে না ──
+      const safe = m.isHtml ? txt : txt.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       bodyHtml = `<div class="msg-bubble">${safe}</div>`;
     }
     const canSelect = !m.deleted;
@@ -21156,7 +21161,7 @@ function sendQuotationFromModal() {
         </div>
       </div>`;
 
-    window.fbAdminSendToClient(targetAppId, quotationHtml, null);
+    window.fbAdminSendToClient(targetAppId, quotationHtml, null, null, true);
   }
 
   // মোডাল বন্ধ করো, ইনবক্সে থাকো
@@ -21642,7 +21647,7 @@ function sendPaymentQuotationToClient() {
           </div>
         </div>
       </div>`;
-    window.fbAdminSendToClient(_activeChatAppId, paymentQuotationHtml, null);
+    window.fbAdminSendToClient(_activeChatAppId, paymentQuotationHtml, null, null, true);
   }
 
   _closePayQuotationModal();
@@ -21848,7 +21853,7 @@ function sendDeliveryForm() {
           <!-- dfSetStar ও dfSubmitForm ফাংশন global JS-এ define করা আছে -->
         </div>
       </div>`;
-    window.fbAdminSendToClient(_activeChatAppId, deliveryHtml, null);
+    window.fbAdminSendToClient(_activeChatAppId, deliveryHtml, null, null, true);
   }
 
   closeDeliveryModal();
@@ -22199,7 +22204,7 @@ function sendQuotation() {
         </div>
       </div>`;
 
-    window.fbAdminSendToClient(targetAppId, quotationHtml, null);
+    window.fbAdminSendToClient(targetAppId, quotationHtml, null, null, true);
   }
 
   setTimeout(() => {
@@ -23004,7 +23009,7 @@ function generatePayLink() {
         </div>
       </div>`;
 
-    window.fbAdminSendToClient(clientAppId, paymentHtml, null);
+    window.fbAdminSendToClient(clientAppId, paymentHtml, null, null, true);
     showToast('পেমেন্ট লিংক পাঠানো হয়েছে!', clientName + '-এর ইনবক্সে পৌঁছে গেছে।', 'success');
   } else {
     showToast('লিংক তৈরি হয়েছে', 'নিচে থেকে কপি করুন বা শেয়ার করুন।', 'success');
