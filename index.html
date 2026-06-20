@@ -30205,35 +30205,41 @@ if (state.landingTheme) {
 
 /* ── Firebase থেকে অভিযোগ রিয়েলটাইম লোড করো (ল্যান্ড পেইজ থেকে আসা) ──
    rules অনুযায়ী এটা শুধু লগইন করা admin পড়তে পারে, তাই Auth রেডি হওয়ার
-   পরই শুরু করা হয় — নাহলে লগইনের আগে permission-denied এরর আসে। */
-_fbAuthReady(function() {
-  (function waitForFbComplaints(retries) {
-    if (typeof window.fbListenComplaints === 'function') {
-      window.fbListenComplaints(function(fbComplaints) {
-        state.complaints = (fbComplaints || []).map(function(fc) {
-          return {
-            _fbId: fc._fbId,
-            id: fc._fbId,
-            name: fc.name || 'ভিজিটর',
-            phone: fc.phone || '',
-            email: fc.email || '',
-            subject: fc.subject || 'ল্যান্ড পেইজ থেকে অভিযোগ/মতামত',
-            body: fc.body || '',
-            anonymous: !!fc.anonymous,
-            date: fc.date || '',
-            status: fc.status || 'pending',
-            replies: fc.replies || []
-          };
+   পরই শুরু করা হয় — নাহলে লগইনের আগে permission-denied এরর আসে।
+   lazy: পেজ লোডে সাথে সাথেই না চালিয়ে, শুধু "অভিযোগ ও পরামর্শ" সেকশনে
+   প্রথমবার ভিজিট করলে চালু হবে — কল হয় goTo()-এর allInits.complaints থেকে। */
+function _startComplaintsFbSync() {
+  if (window._complaintsListenerStarted) return;
+  window._complaintsListenerStarted = true;
+  _fbAuthReady(function() {
+    (function waitForFbComplaints(retries) {
+      if (typeof window.fbListenComplaints === 'function') {
+        window.fbListenComplaints(function(fbComplaints) {
+          state.complaints = (fbComplaints || []).map(function(fc) {
+            return {
+              _fbId: fc._fbId,
+              id: fc._fbId,
+              name: fc.name || 'ভিজিটর',
+              phone: fc.phone || '',
+              email: fc.email || '',
+              subject: fc.subject || 'ল্যান্ড পেইজ থেকে অভিযোগ/মতামত',
+              body: fc.body || '',
+              anonymous: !!fc.anonymous,
+              date: fc.date || '',
+              status: fc.status || 'pending',
+              replies: fc.replies || []
+            };
+          });
+          renderComplaints();
+          updateStats();
+          lsSave();
         });
-        renderComplaints();
-        updateStats();
-        lsSave();
-      });
-    } else if (retries < 20) {
-      setTimeout(function() { waitForFbComplaints(retries + 1); }, 400);
-    }
-  })(0);
-});
+      } else if (retries < 20) {
+        setTimeout(function() { waitForFbComplaints(retries + 1); }, 400);
+      }
+    })(0);
+  });
+}
 
 /* Firestore থেকে এডমিন লিস্ট রিয়েলটাইম সিঙ্ক করো — যেকোনো ডিভাইসে যোগ করা এডমিন
    এই প্যানেলেও দেখা যাবে এবং সব জায়গায় লগইন করা যাবে
@@ -30817,7 +30823,8 @@ function goTo(key, el) {
     paymentConfirm: initPaymentConfirm
   };
   const p3inits = { landingEditor:initLandingEditor, aboutEdit:initAboutEdit, newsTicker:initNewsTicker, notepad:initNotepad, bingSearch:initBingSearch, liveChat:initChat, profileEdit:initProfile };
-  const allInits = Object.assign({}, p2inits, p3inits, { monthly: function(){
+  const allInits = Object.assign({}, p2inits, p3inits, {
+    monthly: function(){
     /* প্রতিবার "মাসিক হিসাব" পেজে ঢোকার সময় সিলেক্ট দুটো বর্তমান (রানিং) মাস/বছরে রিসেট হবে —
        monthSelect-এ কোনো option-এ "selected" না থাকায় আগে ডিফল্ট সবসময় জানুয়ারি হয়ে যেত। */
     var _now = new Date();
@@ -30827,7 +30834,11 @@ function goTo(key, el) {
     if (_ms) _ms.value = String(_now.getMonth()+1);
     if (_ys) _ys.value = String(_now.getFullYear());
     if(typeof renderMonthly==='function') renderMonthly();
-  } });
+    },
+    /* lazy Firestore listener hooks — শুধু সংশ্লিষ্ট সেকশনে প্রথমবার ঢুকলেই চালু হয় */
+    complaints: function(){ if (typeof _startComplaintsFbSync === 'function') _startComplaintsFbSync(); },
+    dashboard: function(){ if (typeof _startActivityLogListener === 'function') _startActivityLogListener(); }
+  });
   if (allInits[key]) setTimeout(() => allInits[key](), 50);
 }
 
@@ -30932,43 +30943,49 @@ window.activityLog = activityLog;
 // collection: recentActivity, সর্ট: createdAt desc, সর্বোচ্চ ২০টা
 // rules অনুযায়ী এটা শুধু লগইন করা admin পড়তে পারে, তাই Auth রেডি হওয়ার
 // পরই শুরু করা হয়।
-_fbAuthReady(function() {
-  (function initActivityLogListener() {
-    function attach() {
-      var db = window._db;
-      var mods = window._fbModules;
-      if (!db || !mods) { setTimeout(attach, 300); return; }
-      try {
-        var q = mods.query(
-          mods.collection(db, 'recentActivity'),
-          mods.orderBy('createdAt', 'desc')
-        );
-        mods.onSnapshot(q, function(snap) {
-          var rows = snap.docs.map(function(d) {
-            var data = d.data();
-            return {
-              id: d.id,
-              admin: data.admin || 'এডমিন',
-              task: data.task || '',
-              time: data.time || '',
-              status: data.status || 'note',
-              star: data.star || 0
-            };
+// lazy: পেজ লোডে সাথে সাথেই না চালিয়ে, শুধু ড্যাশবোর্ড সেকশনে প্রথমবার
+// ভিজিট করলে চালু হবে — কল হয় goTo()-এর allInits.dashboard থেকে।
+function _startActivityLogListener() {
+  if (window._activityLogListenerStarted) return;
+  window._activityLogListenerStarted = true;
+  _fbAuthReady(function() {
+    (function initActivityLogListener() {
+      function attach() {
+        var db = window._db;
+        var mods = window._fbModules;
+        if (!db || !mods) { setTimeout(attach, 300); return; }
+        try {
+          var q = mods.query(
+            mods.collection(db, 'recentActivity'),
+            mods.orderBy('createdAt', 'desc')
+          );
+          mods.onSnapshot(q, function(snap) {
+            var rows = snap.docs.map(function(d) {
+              var data = d.data();
+              return {
+                id: d.id,
+                admin: data.admin || 'এডমিন',
+                task: data.task || '',
+                time: data.time || '',
+                status: data.status || 'note',
+                star: data.star || 0
+              };
+            });
+            if (rows.length > 20) rows = rows.slice(0, 20);
+            window.activityLog = rows;
+            activityLog = rows;
+            renderRecentActivity();
+          }, function(err) {
+            console.error('activityLog onSnapshot error:', err);
           });
-          if (rows.length > 20) rows = rows.slice(0, 20);
-          window.activityLog = rows;
-          activityLog = rows;
-          renderRecentActivity();
-        }, function(err) {
-          console.error('activityLog onSnapshot error:', err);
-        });
-      } catch(e) {
-        console.error('initActivityLogListener error:', e);
+        } catch(e) {
+          console.error('initActivityLogListener error:', e);
+        }
       }
-    }
-    attach();
-  })();
-});
+      attach();
+    })();
+  });
+}
 
 // ── নতুন কার্যক্রম Firestore-এ সেভ করো (এবং লোকাল লিস্টও আপডেট করো) ──
 window.addRecentActivity = async function(item) {
