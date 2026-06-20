@@ -37771,5 +37771,17 @@ async function clientFileDownload(trackingId, fileDocId, fileName) {
 })();
 </script>
 
+<!-- ========== ERUDA মোবাইল ডিবাগ কনসোল ==========
+     শুধু URL-এর শেষে ?debug=1 থাকলেই চালু হবে, সাধারণ ভিজিটর এটা দেখবে না।
+     উদাহরণ: https://abedoni.vercel.app/?debug=1 ==================== -->
+<script>
+  if (new URLSearchParams(window.location.search).get('debug') === '1') {
+    var erudaScript = document.createElement('script');
+    erudaScript.src = 'https://cdn.jsdelivr.net/npm/eruda';
+    erudaScript.onload = function () { eruda.init(); };
+    document.body.appendChild(erudaScript);
+  }
+</script>
+
 </body>
 </html>
