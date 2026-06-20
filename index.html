@@ -31461,7 +31461,7 @@ function renderTracker() {
     const done    = a.done    || 0;
     const revenue = a.revenue || 0;
     const pct = tasks > 0 ? Math.round(done / tasks * 100) : 0;
-    const initials = a.name.charAt(0);
+    const initials = (a.name || '').charAt(0) || '?';
     return `
     <div class="tracker-card">
       <div class="tracker-card-head">
