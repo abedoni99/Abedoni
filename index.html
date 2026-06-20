@@ -29905,10 +29905,6 @@ function adminConfirmedLogout() {
    Called from main site navbar
 ================================ */
 function openSuperAdminPanel() {
-  if (window.currentAdminRole !== 'super-admin') {
-    alert('❌ এই প্যানেল শুধুমাত্র Super Admin-এর জন্য।');
-    return;
-  }
   const wrapper = document.getElementById('superAdminWrapper');
   if (!wrapper) return;
   // body-র direct child হিসেবে move করো — যাতে কোনো parent transform/filter position:fixed নষ্ট না করে
