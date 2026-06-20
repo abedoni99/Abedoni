@@ -21987,6 +21987,7 @@ function autoFillDocs() {
 function renderDocTags() {
   const wrap  = document.getElementById('docTagsWrap');
   const input = document.getElementById('docTagInput');
+  if (!wrap || !input) return;
   wrap.querySelectorAll('.doc-tag').forEach(t => t.remove());
   docTags.forEach((tag, i) => {
     const el = document.createElement('span');
@@ -30684,15 +30685,15 @@ function initPanel() {
   }
   updateDashDate();
   updateStats();
-  renderRecentActivity();
-  renderAdminTable();
-  renderTracker();
-  renderCirculars();
-  renderComplaints();
-  renderServiceCards();
-  renderAds();
-  renderChatContacts();
-  saUpdateMsgBadge();
+  try { renderRecentActivity(); } catch(e) { console.error('renderRecentActivity error:', e); }
+  try { renderAdminTable(); } catch(e) { console.error('renderAdminTable error:', e); }
+  try { renderTracker(); } catch(e) { console.error('renderTracker error:', e); }
+  try { renderCirculars(); } catch(e) { console.error('renderCirculars error:', e); }
+  try { renderComplaints(); } catch(e) { console.error('renderComplaints error:', e); }
+  try { renderServiceCards(); } catch(e) { console.error('renderServiceCards error:', e); }
+  try { renderAds(); } catch(e) { console.error('renderAds error:', e); }
+  try { renderChatContacts(); } catch(e) { console.error('renderChatContacts error:', e); }
+  try { saUpdateMsgBadge(); } catch(e) { console.error('saUpdateMsgBadge error:', e); }
   /* ── মাসিক হিসাব: পেজ লোডেই রানিং মাস/বছর সেট করো ── */
   (function(){ var _n=new Date(); var _ms=document.getElementById('monthSelect'); var _ys=document.getElementById('yearSelect'); if(_ms) _ms.value=String(_n.getMonth()+1); if(_ys) _ys.value=String(_n.getFullYear()); })();
   // live tracker auto-refresh
@@ -32951,13 +32952,15 @@ function filterCircular(cat, btn) {
 
 function renderCirculars() {
   const tb = document.getElementById('circularBody');
+  if (!tb) return;
   const list = circActiveFilter === 'all'
     ? state.circulars
     : state.circulars.filter(c => c.category === circActiveFilter);
 
   if (!list.length) {
     tb.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:32px;color:var(--gray);">এই ক্যাটাগরিতে কোনো সার্কুলার নেই</td></tr>`;
-    document.getElementById('circBadge').textContent = state.circulars.filter(c=>c.status==='active').length;
+    const badgeEl0 = document.getElementById('circBadge');
+    if (badgeEl0) badgeEl0.textContent = state.circulars.filter(c=>c.status==='active').length;
     return;
   }
   tb.innerHTML = list.map((c,i) => {
@@ -32982,7 +32985,8 @@ function renderCirculars() {
       </td>
     </tr>`;
   }).join('');
-  document.getElementById('circBadge').textContent = state.circulars.filter(c=>c.status==='active').length;
+  const badgeEl = document.getElementById('circBadge');
+  if (badgeEl) badgeEl.textContent = state.circulars.filter(c=>c.status==='active').length;
 }
 
 function circHandleImageSelect(input) {
@@ -33232,6 +33236,7 @@ async function deleteCircular(id) {
 ============================= */
 function renderComplaints() {
   const tb = document.getElementById('complaintsBody');
+  if (!tb) return;
   tb.innerHTML = state.complaints.map((c,i) => `
     <tr>
       <td>${i+1}</td>
@@ -33241,7 +33246,8 @@ function renderComplaints() {
       <td><span class="badge ${c.status==='pending'?'badge-pending':'badge-active'}">${c.status==='pending'?'অমীমাংসিত':'সমাধান হয়েছে'}</span></td>
       <td><button class="btn btn-ghost btn-sm" onclick="viewComplaint('${c.id}')"><i class="fas fa-eye"></i> দেখুন</button></td>
     </tr>`).join('');
-  document.getElementById('compBadge').textContent = state.complaints.filter(c=>c.status==='pending').length;
+  const compBadgeEl = document.getElementById('compBadge');
+  if (compBadgeEl) compBadgeEl.textContent = state.complaints.filter(c=>c.status==='pending').length;
 }
 
 /* অটো রিপ্লাই টেমপ্লেট */
@@ -33338,6 +33344,7 @@ function resolveComplaint() {
 ============================= */
 function renderServiceCards() {
   const w = document.getElementById('serviceCardsWrap');
+  if (!w) return;
   w.innerHTML = state.serviceCards.map(c => `
     <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--off-white);border-radius:9px;margin-bottom:8px;border:1.5px solid var(--gray-light);">
       <i class="${c.icon}" style="color:var(--primary);width:20px;text-align:center;"></i>
@@ -33380,6 +33387,7 @@ function saveBranding() {
 /* ADS */
 function renderAds() {
   const tb = document.getElementById('adsBody');
+  if (!tb) return;
   if(!state.ads.length) { tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--gray);padding:20px;">কোনো বিজ্ঞাপন নেই</td></tr>'; return; }
   tb.innerHTML = state.ads.map((a,i) => `
     <tr>
