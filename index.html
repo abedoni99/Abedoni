@@ -18110,8 +18110,8 @@ async function doLogin() {
   // গৃহীত আবেদনের ক্লায়েন্ট চ্যাট লিস্ট চালু করো
   if (currentAdmin && currentAdmin.id) startAcceptedChatsListener(currentAdmin.id);
 
-  // লগইনের পর এই এডমিনের নিজস্ব Super Admin চ্যাট চ্যানেলে listener চালু করো
-  _saStartListener();
+  // lazy: লগইনের সাথে সাথেই না চালিয়ে, শুধু "চ্যাট" প্যানেলে প্রথমবার
+  // ভিজিট করলে চালু হবে — কল হয় switchPanel()-এর ভেতর থেকে (name === 'chat')।
 
   try {
     document.getElementById('loginError').classList.add('hidden');
@@ -18647,6 +18647,8 @@ function switchPanel(name, fromPopState) {
 
   // চ্যাট প্যানেলে আসলে SA section রিসেট করো
   if (name === 'chat') {
+    // lazy: SA মেসেজ listener প্রথমবার চ্যাট প্যানেলে এলে চালু করো
+    if (typeof _startSaChatListener === 'function') _startSaChatListener();
     const _saS = document.getElementById('saChatSection');
     const _clL = document.getElementById('clientChatLayout');
     const _nWin = document.getElementById('normalChatWindow');
@@ -20786,16 +20788,19 @@ function escHtml(t) {
   return String(t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// Start Firebase SA listener on page load
 // rules অনুযায়ী sa_chat শুধু লগইন করা admin পড়তে পারে, তাই Auth রেডি
 // হওয়ার পরই শুরু করা হয় — নাহলে লগইনের আগে permission-denied এরর আসে।
-document.addEventListener('DOMContentLoaded', () => {
+// lazy: পেজ লোড/লগইনের সাথে সাথেই না চালিয়ে, শুধু "চ্যাট" প্যানেলে প্রথমবার
+// ভিজিট করলে চালু হবে — কল হয় switchPanel()-এর ভেতর থেকে (name === 'chat')।
+function _startSaChatListener() {
+  if (window._saChatListenerStarted) return;
+  window._saChatListenerStarted = true;
   if (typeof _fbAuthReady === 'function') {
     _fbAuthReady(() => { _saStartListener(); });
   } else {
     _saStartListener();
   }
-});
+}
 
 function handleChatFile(input) {
   if (!input.files.length) return;
@@ -22534,32 +22539,36 @@ async function saRejectPayment(reqId) {
   }
 }
 
-/* ── পেজ লোডে badge আপডেটের জন্য background listener ──
+/* ── পেমেন্ট রিকোয়েস্ট badge listener ──
    rules অনুযায়ী payment_requests শুধু লগইন করা admin পড়তে পারে, তাই
-   Auth রেডি হওয়ার পরই শুরু করা হয়। */
-(function() {
-  document.addEventListener('DOMContentLoaded', function() {
-    setTimeout(function() {
-      function startBadgeListener() {
-        if (typeof window.fbListenPaymentRequests === 'function') {
-          window.fbListenPaymentRequests(function(reqs) {
-            const badge = document.getElementById('payConfirmBadge');
-            const pending = reqs.filter(r => r.status === 'pending').length;
-            if (badge) {
-              badge.textContent = pending || '';
-              badge.style.display = pending ? 'inline-flex' : 'none';
-            }
-          });
+   Auth রেডি হওয়ার পরই শুরু করা হয়।
+   lazy: আগে এটা পেজ লোডের ২ সেকেন্ড পর ব্যাকগ্রাউন্ডে আপনাআপনি চালু হতো।
+   এখন আর আলাদাভাবে অটো-রান হয় না — কারণ "পেমেন্ট কনফার্ম" সেকশনে
+   (allInits.paymentConfirm → initPaymentConfirm) প্রথমবার ঢুকলেই এই
+   একই badge (payConfirmBadge) আপডেট হয়ে যায়, তাই এই ফাংশনটা ডুপ্লিকেট
+   এড়াতে রেখে দেওয়া হয়েছে কিন্তু এখন আর কোথাও কল করা হয় না। */
+window._payBadgeListenerStarted = false;
+function _startPaymentBadgeListener() {
+  if (window._payBadgeListenerStarted) return;
+  window._payBadgeListenerStarted = true;
+  function startBadgeListener() {
+    if (typeof window.fbListenPaymentRequests === 'function') {
+      window.fbListenPaymentRequests(function(reqs) {
+        const badge = document.getElementById('payConfirmBadge');
+        const pending = reqs.filter(r => r.status === 'pending').length;
+        if (badge) {
+          badge.textContent = pending || '';
+          badge.style.display = pending ? 'inline-flex' : 'none';
         }
-      }
-      if (typeof _fbAuthReady === 'function') {
-        _fbAuthReady(startBadgeListener);
-      } else {
-        startBadgeListener();
-      }
-    }, 2000);
-  });
-})();
+      });
+    }
+  }
+  if (typeof _fbAuthReady === 'function') {
+    _fbAuthReady(startBadgeListener);
+  } else {
+    startBadgeListener();
+  }
+}
 
 function loadBkashSettings() {
   const merchant = localStorage.getItem('bkashMerchant') || '';
@@ -30160,48 +30169,54 @@ if (state.landingTheme) {
   if (state.landingTheme.accent)  document.documentElement.style.setProperty('--accent',  state.landingTheme.accent);
 }
 
-/* ── Firebase থেকে সার্কুলার রিয়েলটাইম লোড করো ── */
-(function waitForFbCirculars(retries) {
-  if (typeof window.fbListenCirculars === 'function') {
-    window.fbListenCirculars(function(fbCirculars) {
-      if (!fbCirculars || fbCirculars.length === 0) return;
-      // ── _test:true সার্কুলার ফিল্টার করো ──
-      fbCirculars = fbCirculars.filter(function(fc) { return !fc._test; });
-      if (fbCirculars.length === 0) return;
-      // ── মেয়াদ শেষ সার্কুলার Firebase থেকে অটো ডিলিট (Super Admin) ──
-      const todaySA = new Date(); todaySA.setHours(0,0,0,0);
-      fbCirculars.forEach(function(fc) {
-        const dl = fc.expiry || fc.deadline || null;
-        if (dl) {
-          const d = new Date(dl); d.setHours(0,0,0,0);
-          if (d < todaySA && fc._fbId && typeof window.fbDeleteCircular === 'function') {
-            window.fbDeleteCircular(fc._fbId);
+/* ── Firebase থেকে সার্কুলার রিয়েলটাইম লোড করো (Super Admin প্যানেলের ভার্সন) ──
+   lazy: পেজ লোডে সাথে সাথেই না চালিয়ে, শুধু "সার্কুলার" সেকশনে প্রথমবার
+   ভিজিট করলে চালু হবে — কল হয় goTo()-এর allInits.circular থেকে। */
+function _startCircularsFbSync() {
+  if (window._circularsListenerStarted) return;
+  window._circularsListenerStarted = true;
+  (function waitForFbCirculars(retries) {
+    if (typeof window.fbListenCirculars === 'function') {
+      window.fbListenCirculars(function(fbCirculars) {
+        if (!fbCirculars || fbCirculars.length === 0) return;
+        // ── _test:true সার্কুলার ফিল্টার করো ──
+        fbCirculars = fbCirculars.filter(function(fc) { return !fc._test; });
+        if (fbCirculars.length === 0) return;
+        // ── মেয়াদ শেষ সার্কুলার Firebase থেকে অটো ডিলিট (Super Admin) ──
+        const todaySA = new Date(); todaySA.setHours(0,0,0,0);
+        fbCirculars.forEach(function(fc) {
+          const dl = fc.expiry || fc.deadline || null;
+          if (dl) {
+            const d = new Date(dl); d.setHours(0,0,0,0);
+            if (d < todaySA && fc._fbId && typeof window.fbDeleteCircular === 'function') {
+              window.fbDeleteCircular(fc._fbId);
+            }
           }
-        }
+        });
+        // Firebase ডেটা দিয়ে local state replace করো
+        state.circulars = fbCirculars.map(function(fc) {
+          return {
+            _fbId: fc._fbId,
+            id: fc._fbId,
+            title: fc.title || '',
+            content: fc.content || '',
+            category: fc.category || 'other',
+            date: fc.date || '',
+            expiry: fc.expiry || null,
+            target: fc.target || 'all',
+            image: fc.image || null,
+            applyLink: fc.applyLink || null,
+            status: fc.status || 'active'
+          };
+        });
+        renderCirculars();
+        lsSave();
       });
-      // Firebase ডেটা দিয়ে local state replace করো
-      state.circulars = fbCirculars.map(function(fc) {
-        return {
-          _fbId: fc._fbId,
-          id: fc._fbId,
-          title: fc.title || '',
-          content: fc.content || '',
-          category: fc.category || 'other',
-          date: fc.date || '',
-          expiry: fc.expiry || null,
-          target: fc.target || 'all',
-          image: fc.image || null,
-          applyLink: fc.applyLink || null,
-          status: fc.status || 'active'
-        };
-      });
-      renderCirculars();
-      lsSave();
-    });
-  } else if (retries < 20) {
-    setTimeout(function() { waitForFbCirculars(retries + 1); }, 400);
-  }
-})(0);
+    } else if (retries < 20) {
+      setTimeout(function() { waitForFbCirculars(retries + 1); }, 400);
+    }
+  })(0);
+}
 
 /* ── Firebase থেকে অভিযোগ রিয়েলটাইম লোড করো (ল্যান্ড পেইজ থেকে আসা) ──
    rules অনুযায়ী এটা শুধু লগইন করা admin পড়তে পারে, তাই Auth রেডি হওয়ার
@@ -30244,8 +30259,15 @@ function _startComplaintsFbSync() {
 /* Firestore থেকে এডমিন লিস্ট রিয়েলটাইম সিঙ্ক করো — যেকোনো ডিভাইসে যোগ করা এডমিন
    এই প্যানেলেও দেখা যাবে এবং সব জায়গায় লগইন করা যাবে
    rules অনুযায়ী admins কালেকশন শুধু লগইন করা admin পড়তে পারে, তাই Auth
-   রেডি হওয়ার পরই শুরু করা হয়। */
-_fbAuthReady(function() {
+   রেডি হওয়ার পরই শুরু করা হয়।
+   lazy: পেজ লোড/লগইনের সাথে সাথেই না চালিয়ে, শুধু ড্যাশবোর্ড বা "এডমিন
+   ম্যানেজমেন্ট" সেকশনে প্রথমবার ভিজিট করলে চালু হবে — কল হয় goTo()-এর
+   allInits.dashboard / allInits.adminMgmt থেকে (দুটোর যেকোনো একটাতে আগে
+   গেলেই চালু হবে)। */
+function _startAdminsFbSync() {
+  if (window._adminsListenerStarted) return;
+  window._adminsListenerStarted = true;
+  _fbAuthReady(function() {
   (function waitForFirebaseAdmins(retries) {
     try {
       if (typeof window.fbListenAdmins === 'function') {
@@ -30307,51 +30329,6 @@ _fbAuthReady(function() {
             if (typeof renderTracker === 'function') renderTracker();
             if (typeof renderChatContacts === 'function') renderChatContacts();
             if (typeof renderMonthly === 'function') renderMonthly(); /* কমিশন রেট সিঙ্কের পরে মাসিক হিসাব রিফ্রেশ */
-
-            /* ── app_notifications + applications join listener (একবারই চালু) ── */
-            if (!window._monthlyNotifListenerStarted && typeof window.fbListenMonthlyData === 'function') {
-              window._monthlyNotifListenerStarted = true;
-              window.fbListenMonthlyData(function(rows) {
-                try {
-                  /* লোকাল fromDelivery এন্ট্রি রাখো যেগুলো Firestore-এ নেই */
-                  var localOnly = (state.applications || []).filter(function(a) {
-                    return (a.fromDelivery || a.fromManual) && !rows.find(function(r) { return r.appId === a.id; });
-                  });
-                  var fbMapped = rows.map(function(r) {
-                    var dateStr = '', timeStr = '', tsMs = 0;
-                    var ts = r.completedAt || r.createdAt;
-                    var dt = null;
-                    if (ts && typeof ts.toDate === 'function') { dt = ts.toDate(); }
-                    else if (ts && ts.seconds) { dt = new Date(ts.seconds * 1000); }
-                    if (dt) {
-                      tsMs = dt.getTime();
-                      dateStr = dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0');
-                      var h = dt.getHours();
-                      var period = h < 12 ? 'সকাল' : h < 17 ? 'দুপুর' : 'বিকেল';
-                      var h12 = h > 12 ? h - 12 : h === 0 ? 12 : h;
-                      timeStr = period + ' ' + h12 + ':' + String(dt.getMinutes()).padStart(2,'0');
-                    }
-                    return {
-                      id:            r.appId || r.notifId,
-                      adminId:       r.adminId,
-                      date:          dateStr,
-                      time:          timeStr,
-                      completedTs:   tsMs,
-                      jobTitle:      r.serviceName,
-                      appliedAmount: r.appliedAmount,
-                      status:        'সম্পন্ন',
-                      fromFirestore: true
-                    };
-                  });
-                  state.applications = localOnly.concat(fbMapped);
-                  /* sec-monthly active থাকলে সাথে সাথে render */
-                  var monthlySec = document.getElementById('sec-monthly');
-                  if (monthlySec && monthlySec.classList.contains('active')) {
-                    if (typeof renderMonthly === 'function') renderMonthly();
-                  }
-                } catch(e2) { console.error('monthly data listener error:', e2); }
-              });
-            }
           } catch(e) { console.error('Admin sync render failed:', e); }
         });
       } else if (retries > 0) {
@@ -30359,7 +30336,62 @@ _fbAuthReady(function() {
       }
     } catch(e) { console.error('waitForFirebaseAdmins failed:', e); }
   })(20);
-});
+  });
+}
+
+/* ── app_notifications + applications join listener (মাসিক হিসাব) ──
+   rules অনুযায়ী এটা শুধু লগইন করা admin পড়তে পারে, তাই Auth রেডি হওয়ার
+   পরই শুরু করা হয়।
+   lazy: আগে এটা এডমিন-লিস্ট সিঙ্কের ভেতরে নেস্টেড থাকায় তার সাথে একসাথে
+   চালু হয়ে যেত। এখন আলাদা করে দেওয়া হয়েছে — শুধু "মাসিক হিসাব" সেকশনে
+   প্রথমবার ভিজিট করলে চালু হবে — কল হয় goTo()-এর allInits.monthly থেকে। */
+function _startMonthlyFbSync() {
+  if (window._monthlyNotifListenerStarted) return;
+  window._monthlyNotifListenerStarted = true;
+  _fbAuthReady(function() {
+    if (typeof window.fbListenMonthlyData !== 'function') return;
+    window.fbListenMonthlyData(function(rows) {
+      try {
+        /* লোকাল fromDelivery এন্ট্রি রাখো যেগুলো Firestore-এ নেই */
+        var localOnly = (state.applications || []).filter(function(a) {
+          return (a.fromDelivery || a.fromManual) && !rows.find(function(r) { return r.appId === a.id; });
+        });
+        var fbMapped = rows.map(function(r) {
+          var dateStr = '', timeStr = '', tsMs = 0;
+          var ts = r.completedAt || r.createdAt;
+          var dt = null;
+          if (ts && typeof ts.toDate === 'function') { dt = ts.toDate(); }
+          else if (ts && ts.seconds) { dt = new Date(ts.seconds * 1000); }
+          if (dt) {
+            tsMs = dt.getTime();
+            dateStr = dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0');
+            var h = dt.getHours();
+            var period = h < 12 ? 'সকাল' : h < 17 ? 'দুপুর' : 'বিকেল';
+            var h12 = h > 12 ? h - 12 : h === 0 ? 12 : h;
+            timeStr = period + ' ' + h12 + ':' + String(dt.getMinutes()).padStart(2,'0');
+          }
+          return {
+            id:            r.appId || r.notifId,
+            adminId:       r.adminId,
+            date:          dateStr,
+            time:          timeStr,
+            completedTs:   tsMs,
+            jobTitle:      r.serviceName,
+            appliedAmount: r.appliedAmount,
+            status:        'সম্পন্ন',
+            fromFirestore: true
+          };
+        });
+        state.applications = localOnly.concat(fbMapped);
+        /* sec-monthly active থাকলে সাথে সাথে render */
+        var monthlySec = document.getElementById('sec-monthly');
+        if (monthlySec && monthlySec.classList.contains('active')) {
+          if (typeof renderMonthly === 'function') renderMonthly();
+        }
+      } catch(e2) { console.error('monthly data listener error:', e2); }
+    });
+  });
+}
 
 /* =============================
    LOGIN — Cryptographic Session Token
@@ -30834,10 +30866,16 @@ function goTo(key, el) {
     if (_ms) _ms.value = String(_now.getMonth()+1);
     if (_ys) _ys.value = String(_now.getFullYear());
     if(typeof renderMonthly==='function') renderMonthly();
+    if (typeof _startMonthlyFbSync === 'function') _startMonthlyFbSync();
     },
     /* lazy Firestore listener hooks — শুধু সংশ্লিষ্ট সেকশনে প্রথমবার ঢুকলেই চালু হয় */
     complaints: function(){ if (typeof _startComplaintsFbSync === 'function') _startComplaintsFbSync(); },
-    dashboard: function(){ if (typeof _startActivityLogListener === 'function') _startActivityLogListener(); }
+    dashboard: function(){
+      if (typeof _startActivityLogListener === 'function') _startActivityLogListener();
+      if (typeof _startAdminsFbSync === 'function') _startAdminsFbSync();
+    },
+    adminMgmt: function(){ if (typeof _startAdminsFbSync === 'function') _startAdminsFbSync(); },
+    circular: function(){ if (typeof _startCircularsFbSync === 'function') _startCircularsFbSync(); }
   });
   if (allInits[key]) setTimeout(() => allInits[key](), 50);
 }
