@@ -20787,8 +20787,14 @@ function escHtml(t) {
 }
 
 // Start Firebase SA listener on page load
+// rules অনুযায়ী sa_chat শুধু লগইন করা admin পড়তে পারে, তাই Auth রেডি
+// হওয়ার পরই শুরু করা হয় — নাহলে লগইনের আগে permission-denied এরর আসে।
 document.addEventListener('DOMContentLoaded', () => {
-  _saStartListener();
+  if (typeof _fbAuthReady === 'function') {
+    _fbAuthReady(() => { _saStartListener(); });
+  } else {
+    _saStartListener();
+  }
 });
 
 function handleChatFile(input) {
@@ -22528,19 +22534,28 @@ async function saRejectPayment(reqId) {
   }
 }
 
-/* ── পেজ লোডে badge আপডেটের জন্য background listener ── */
+/* ── পেজ লোডে badge আপডেটের জন্য background listener ──
+   rules অনুযায়ী payment_requests শুধু লগইন করা admin পড়তে পারে, তাই
+   Auth রেডি হওয়ার পরই শুরু করা হয়। */
 (function() {
   document.addEventListener('DOMContentLoaded', function() {
     setTimeout(function() {
-      if (typeof window.fbListenPaymentRequests === 'function') {
-        window.fbListenPaymentRequests(function(reqs) {
-          const badge = document.getElementById('payConfirmBadge');
-          const pending = reqs.filter(r => r.status === 'pending').length;
-          if (badge) {
-            badge.textContent = pending || '';
-            badge.style.display = pending ? 'inline-flex' : 'none';
-          }
-        });
+      function startBadgeListener() {
+        if (typeof window.fbListenPaymentRequests === 'function') {
+          window.fbListenPaymentRequests(function(reqs) {
+            const badge = document.getElementById('payConfirmBadge');
+            const pending = reqs.filter(r => r.status === 'pending').length;
+            if (badge) {
+              badge.textContent = pending || '';
+              badge.style.display = pending ? 'inline-flex' : 'none';
+            }
+          });
+        }
+      }
+      if (typeof _fbAuthReady === 'function') {
+        _fbAuthReady(startBadgeListener);
+      } else {
+        startBadgeListener();
       }
     }, 2000);
   });
@@ -30115,6 +30130,25 @@ function lsSave() {
   }
 }
 
+/* ── Firebase Auth রেডি হওয়ার অপেক্ষায় থাকা হেল্পার ──
+   যেসব Firestore listener-এর জন্য rules-এ লগইন করা admin দরকার (isAdmin()),
+   সেগুলো এই হেল্পার দিয়ে গেট করা হয় — যাতে লগইনের আগে শুরু না হয়ে
+   permission-denied এরর তৈরি না করে। Firebase Auth-এর প্রকৃত
+   onAuthStateChanged ব্যবহার করা হয়, কারণ rules-এর request.auth
+   ঠিক এই অবস্থার সাথেই মেলে (localStorage session ফ্ল্যাগের সাথে না)। */
+function _fbAuthReady(callback) {
+  function attach() {
+    if (typeof window.fbWatchAdminAuth !== 'function') {
+      setTimeout(attach, 300);
+      return;
+    }
+    window.fbWatchAdminAuth(function(user) {
+      if (user) callback();
+    });
+  }
+  attach();
+}
+
 /* =============================
    STATE & CREDENTIALS
 ============================= */
@@ -30169,149 +30203,157 @@ if (state.landingTheme) {
   }
 })(0);
 
-/* ── Firebase থেকে অভিযোগ রিয়েলটাইম লোড করো (ল্যান্ড পেইজ থেকে আসা) ── */
-(function waitForFbComplaints(retries) {
-  if (typeof window.fbListenComplaints === 'function') {
-    window.fbListenComplaints(function(fbComplaints) {
-      state.complaints = (fbComplaints || []).map(function(fc) {
-        return {
-          _fbId: fc._fbId,
-          id: fc._fbId,
-          name: fc.name || 'ভিজিটর',
-          phone: fc.phone || '',
-          email: fc.email || '',
-          subject: fc.subject || 'ল্যান্ড পেইজ থেকে অভিযোগ/মতামত',
-          body: fc.body || '',
-          anonymous: !!fc.anonymous,
-          date: fc.date || '',
-          status: fc.status || 'pending',
-          replies: fc.replies || []
-        };
+/* ── Firebase থেকে অভিযোগ রিয়েলটাইম লোড করো (ল্যান্ড পেইজ থেকে আসা) ──
+   rules অনুযায়ী এটা শুধু লগইন করা admin পড়তে পারে, তাই Auth রেডি হওয়ার
+   পরই শুরু করা হয় — নাহলে লগইনের আগে permission-denied এরর আসে। */
+_fbAuthReady(function() {
+  (function waitForFbComplaints(retries) {
+    if (typeof window.fbListenComplaints === 'function') {
+      window.fbListenComplaints(function(fbComplaints) {
+        state.complaints = (fbComplaints || []).map(function(fc) {
+          return {
+            _fbId: fc._fbId,
+            id: fc._fbId,
+            name: fc.name || 'ভিজিটর',
+            phone: fc.phone || '',
+            email: fc.email || '',
+            subject: fc.subject || 'ল্যান্ড পেইজ থেকে অভিযোগ/মতামত',
+            body: fc.body || '',
+            anonymous: !!fc.anonymous,
+            date: fc.date || '',
+            status: fc.status || 'pending',
+            replies: fc.replies || []
+          };
+        });
+        renderComplaints();
+        updateStats();
+        lsSave();
       });
-      renderComplaints();
-      updateStats();
-      lsSave();
-    });
-  } else if (retries < 20) {
-    setTimeout(function() { waitForFbComplaints(retries + 1); }, 400);
-  }
-})(0);
+    } else if (retries < 20) {
+      setTimeout(function() { waitForFbComplaints(retries + 1); }, 400);
+    }
+  })(0);
+});
 
 /* Firestore থেকে এডমিন লিস্ট রিয়েলটাইম সিঙ্ক করো — যেকোনো ডিভাইসে যোগ করা এডমিন
-   এই প্যানেলেও দেখা যাবে এবং সব জায়গায় লগইন করা যাবে */
-(function waitForFirebaseAdmins(retries) {
-  try {
-    if (typeof window.fbListenAdmins === 'function') {
-      window.fbListenAdmins(function(fsAdmins) {
-        try {
-          /* demo এডমিনের phone নম্বর ও id — Firestore থেকে আসলেও বাদ দাও */
-          const _demoPhones = ['01711111111','01722222222','01733333333','01744444444'];
-          const _demoIds    = [1,2,3,4];
-          const _realAdmins = fsAdmins.filter(function(fa) {
-            return !_demoPhones.includes(fa.phone) && !_demoIds.includes(Number(fa.id));
-          });
-          _realAdmins.forEach(function(fa) {
-            const credIdx = ADMIN_CREDENTIALS.findIndex(function(c){ return String(c.id) === String(fa.id); });
-            if (credIdx === -1) {
-              ADMIN_CREDENTIALS.push({ name: fa.name, firstLogin: !!fa.firstLogin, comm: (fa.comm != null ? fa.comm : null), customTnC: fa.customTnC || null, id: fa.id });
-            } else {
-              /* বিদ্যমান entry-তে comm ও customTnC আপডেট করো */
-              if (fa.comm != null) ADMIN_CREDENTIALS[credIdx].comm = fa.comm;
-              if (fa.customTnC) ADMIN_CREDENTIALS[credIdx].customTnC = fa.customTnC;
-              if (fa.id != null) ADMIN_CREDENTIALS[credIdx].id = fa.id;
-            }
-
-            const idx = state.admins.findIndex(function(a){ return String(a.id) === String(fa.id); });
-            const mergedId = isNaN(fa.id) ? fa.id : Number(fa.id);
-            const merged = Object.assign({ id: mergedId }, fa);
-            if (idx === -1) state.admins.push(merged);
-            else state.admins[idx] = Object.assign({}, state.admins[idx], merged);
-
-            // ── p3state.chatContacts-এও সিঙ্ক করো — যাতে নিয়োগকৃত এডমিন
-            //    Super Admin প্যানেলের লাইভ চ্যাট লিস্টে (ব্যক্তিগত চ্যাট) দেখা যায় ──
-            if (typeof p3state !== 'undefined' && p3state.chatContacts) {
-              const cIdx = p3state.chatContacts.findIndex(function(c){ return String(c.id) === String(mergedId); });
-              if (cIdx === -1) {
-                const colors = ['#1B3A8C','#2F6B4F','#7B2FBE','#C0392B','#C9A227','#2471A3','#1E8449'];
-                const adminColor = colors[p3state.chatContacts.length % colors.length];
-                p3state.chatContacts.push({
-                  id: mergedId,
-                  name: fa.name || fa.phone || 'এডমিন',
-                  code: fa.code || '',
-                  photo: (fa.profileData && fa.profileData.avatarData) || '',
-                  online: false,
-                  lastMsg: 'নতুন এডমিন',
-                  lastTime: '',
-                  unread: 0,
-                  color: adminColor
-                });
-                if (!p3state.chatMessages) p3state.chatMessages = {};
-                if (!p3state.chatMessages[mergedId]) p3state.chatMessages[mergedId] = [];
-              } else {
-                p3state.chatContacts[cIdx].name = fa.name || p3state.chatContacts[cIdx].name;
-                p3state.chatContacts[cIdx].code = fa.code || p3state.chatContacts[cIdx].code;
-                if (fa.profileData && fa.profileData.avatarData) p3state.chatContacts[cIdx].photo = fa.profileData.avatarData;
-              }
-              if (typeof _admChatStartListener === 'function') _admChatStartListener(mergedId);
-            }
-          });
-          if (typeof renderAdminTable === 'function') renderAdminTable();
-          if (typeof updateStats === 'function') updateStats();
-          if (typeof renderTracker === 'function') renderTracker();
-          if (typeof renderChatContacts === 'function') renderChatContacts();
-          if (typeof renderMonthly === 'function') renderMonthly(); /* কমিশন রেট সিঙ্কের পরে মাসিক হিসাব রিফ্রেশ */
-
-          /* ── app_notifications + applications join listener (একবারই চালু) ── */
-          if (!window._monthlyNotifListenerStarted && typeof window.fbListenMonthlyData === 'function') {
-            window._monthlyNotifListenerStarted = true;
-            window.fbListenMonthlyData(function(rows) {
-              try {
-                /* লোকাল fromDelivery এন্ট্রি রাখো যেগুলো Firestore-এ নেই */
-                var localOnly = (state.applications || []).filter(function(a) {
-                  return (a.fromDelivery || a.fromManual) && !rows.find(function(r) { return r.appId === a.id; });
-                });
-                var fbMapped = rows.map(function(r) {
-                  var dateStr = '', timeStr = '', tsMs = 0;
-                  var ts = r.completedAt || r.createdAt;
-                  var dt = null;
-                  if (ts && typeof ts.toDate === 'function') { dt = ts.toDate(); }
-                  else if (ts && ts.seconds) { dt = new Date(ts.seconds * 1000); }
-                  if (dt) {
-                    tsMs = dt.getTime();
-                    dateStr = dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0');
-                    var h = dt.getHours();
-                    var period = h < 12 ? 'সকাল' : h < 17 ? 'দুপুর' : 'বিকেল';
-                    var h12 = h > 12 ? h - 12 : h === 0 ? 12 : h;
-                    timeStr = period + ' ' + h12 + ':' + String(dt.getMinutes()).padStart(2,'0');
-                  }
-                  return {
-                    id:            r.appId || r.notifId,
-                    adminId:       r.adminId,
-                    date:          dateStr,
-                    time:          timeStr,
-                    completedTs:   tsMs,
-                    jobTitle:      r.serviceName,
-                    appliedAmount: r.appliedAmount,
-                    status:        'সম্পন্ন',
-                    fromFirestore: true
-                  };
-                });
-                state.applications = localOnly.concat(fbMapped);
-                /* sec-monthly active থাকলে সাথে সাথে render */
-                var monthlySec = document.getElementById('sec-monthly');
-                if (monthlySec && monthlySec.classList.contains('active')) {
-                  if (typeof renderMonthly === 'function') renderMonthly();
-                }
-              } catch(e2) { console.error('monthly data listener error:', e2); }
+   এই প্যানেলেও দেখা যাবে এবং সব জায়গায় লগইন করা যাবে
+   rules অনুযায়ী admins কালেকশন শুধু লগইন করা admin পড়তে পারে, তাই Auth
+   রেডি হওয়ার পরই শুরু করা হয়। */
+_fbAuthReady(function() {
+  (function waitForFirebaseAdmins(retries) {
+    try {
+      if (typeof window.fbListenAdmins === 'function') {
+        window.fbListenAdmins(function(fsAdmins) {
+          try {
+            /* demo এডমিনের phone নম্বর ও id — Firestore থেকে আসলেও বাদ দাও */
+            const _demoPhones = ['01711111111','01722222222','01733333333','01744444444'];
+            const _demoIds    = [1,2,3,4];
+            const _realAdmins = fsAdmins.filter(function(fa) {
+              return !_demoPhones.includes(fa.phone) && !_demoIds.includes(Number(fa.id));
             });
-          }
-        } catch(e) { console.error('Admin sync render failed:', e); }
-      });
-    } else if (retries > 0) {
-      setTimeout(function(){ waitForFirebaseAdmins(retries - 1); }, 300);
-    }
-  } catch(e) { console.error('waitForFirebaseAdmins failed:', e); }
-})(20);
+            _realAdmins.forEach(function(fa) {
+              const credIdx = ADMIN_CREDENTIALS.findIndex(function(c){ return String(c.id) === String(fa.id); });
+              if (credIdx === -1) {
+                ADMIN_CREDENTIALS.push({ name: fa.name, firstLogin: !!fa.firstLogin, comm: (fa.comm != null ? fa.comm : null), customTnC: fa.customTnC || null, id: fa.id });
+              } else {
+                /* বিদ্যমান entry-তে comm ও customTnC আপডেট করো */
+                if (fa.comm != null) ADMIN_CREDENTIALS[credIdx].comm = fa.comm;
+                if (fa.customTnC) ADMIN_CREDENTIALS[credIdx].customTnC = fa.customTnC;
+                if (fa.id != null) ADMIN_CREDENTIALS[credIdx].id = fa.id;
+              }
+
+              const idx = state.admins.findIndex(function(a){ return String(a.id) === String(fa.id); });
+              const mergedId = isNaN(fa.id) ? fa.id : Number(fa.id);
+              const merged = Object.assign({ id: mergedId }, fa);
+              if (idx === -1) state.admins.push(merged);
+              else state.admins[idx] = Object.assign({}, state.admins[idx], merged);
+
+              // ── p3state.chatContacts-এও সিঙ্ক করো — যাতে নিয়োগকৃত এডমিন
+              //    Super Admin প্যানেলের লাইভ চ্যাট লিস্টে (ব্যক্তিগত চ্যাট) দেখা যায় ──
+              if (typeof p3state !== 'undefined' && p3state.chatContacts) {
+                const cIdx = p3state.chatContacts.findIndex(function(c){ return String(c.id) === String(mergedId); });
+                if (cIdx === -1) {
+                  const colors = ['#1B3A8C','#2F6B4F','#7B2FBE','#C0392B','#C9A227','#2471A3','#1E8449'];
+                  const adminColor = colors[p3state.chatContacts.length % colors.length];
+                  p3state.chatContacts.push({
+                    id: mergedId,
+                    name: fa.name || fa.phone || 'এডমিন',
+                    code: fa.code || '',
+                    photo: (fa.profileData && fa.profileData.avatarData) || '',
+                    online: false,
+                    lastMsg: 'নতুন এডমিন',
+                    lastTime: '',
+                    unread: 0,
+                    color: adminColor
+                  });
+                  if (!p3state.chatMessages) p3state.chatMessages = {};
+                  if (!p3state.chatMessages[mergedId]) p3state.chatMessages[mergedId] = [];
+                } else {
+                  p3state.chatContacts[cIdx].name = fa.name || p3state.chatContacts[cIdx].name;
+                  p3state.chatContacts[cIdx].code = fa.code || p3state.chatContacts[cIdx].code;
+                  if (fa.profileData && fa.profileData.avatarData) p3state.chatContacts[cIdx].photo = fa.profileData.avatarData;
+                }
+                if (typeof _admChatStartListener === 'function') _admChatStartListener(mergedId);
+              }
+            });
+            if (typeof renderAdminTable === 'function') renderAdminTable();
+            if (typeof updateStats === 'function') updateStats();
+            if (typeof renderTracker === 'function') renderTracker();
+            if (typeof renderChatContacts === 'function') renderChatContacts();
+            if (typeof renderMonthly === 'function') renderMonthly(); /* কমিশন রেট সিঙ্কের পরে মাসিক হিসাব রিফ্রেশ */
+
+            /* ── app_notifications + applications join listener (একবারই চালু) ── */
+            if (!window._monthlyNotifListenerStarted && typeof window.fbListenMonthlyData === 'function') {
+              window._monthlyNotifListenerStarted = true;
+              window.fbListenMonthlyData(function(rows) {
+                try {
+                  /* লোকাল fromDelivery এন্ট্রি রাখো যেগুলো Firestore-এ নেই */
+                  var localOnly = (state.applications || []).filter(function(a) {
+                    return (a.fromDelivery || a.fromManual) && !rows.find(function(r) { return r.appId === a.id; });
+                  });
+                  var fbMapped = rows.map(function(r) {
+                    var dateStr = '', timeStr = '', tsMs = 0;
+                    var ts = r.completedAt || r.createdAt;
+                    var dt = null;
+                    if (ts && typeof ts.toDate === 'function') { dt = ts.toDate(); }
+                    else if (ts && ts.seconds) { dt = new Date(ts.seconds * 1000); }
+                    if (dt) {
+                      tsMs = dt.getTime();
+                      dateStr = dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0');
+                      var h = dt.getHours();
+                      var period = h < 12 ? 'সকাল' : h < 17 ? 'দুপুর' : 'বিকেল';
+                      var h12 = h > 12 ? h - 12 : h === 0 ? 12 : h;
+                      timeStr = period + ' ' + h12 + ':' + String(dt.getMinutes()).padStart(2,'0');
+                    }
+                    return {
+                      id:            r.appId || r.notifId,
+                      adminId:       r.adminId,
+                      date:          dateStr,
+                      time:          timeStr,
+                      completedTs:   tsMs,
+                      jobTitle:      r.serviceName,
+                      appliedAmount: r.appliedAmount,
+                      status:        'সম্পন্ন',
+                      fromFirestore: true
+                    };
+                  });
+                  state.applications = localOnly.concat(fbMapped);
+                  /* sec-monthly active থাকলে সাথে সাথে render */
+                  var monthlySec = document.getElementById('sec-monthly');
+                  if (monthlySec && monthlySec.classList.contains('active')) {
+                    if (typeof renderMonthly === 'function') renderMonthly();
+                  }
+                } catch(e2) { console.error('monthly data listener error:', e2); }
+              });
+            }
+          } catch(e) { console.error('Admin sync render failed:', e); }
+        });
+      } else if (retries > 0) {
+        setTimeout(function(){ waitForFirebaseAdmins(retries - 1); }, 300);
+      }
+    } catch(e) { console.error('waitForFirebaseAdmins failed:', e); }
+  })(20);
+});
 
 /* =============================
    LOGIN — Cryptographic Session Token
@@ -30888,41 +30930,45 @@ window.activityLog = activityLog;
 
 // ── Firestore থেকে রিয়েলটাইম সাম্প্রতিক কার্যক্রম লোড করো ──
 // collection: recentActivity, সর্ট: createdAt desc, সর্বোচ্চ ২০টা
-(function initActivityLogListener() {
-  function attach() {
-    var db = window._db;
-    var mods = window._fbModules;
-    if (!db || !mods) { setTimeout(attach, 300); return; }
-    try {
-      var q = mods.query(
-        mods.collection(db, 'recentActivity'),
-        mods.orderBy('createdAt', 'desc')
-      );
-      mods.onSnapshot(q, function(snap) {
-        var rows = snap.docs.map(function(d) {
-          var data = d.data();
-          return {
-            id: d.id,
-            admin: data.admin || 'এডমিন',
-            task: data.task || '',
-            time: data.time || '',
-            status: data.status || 'note',
-            star: data.star || 0
-          };
+// rules অনুযায়ী এটা শুধু লগইন করা admin পড়তে পারে, তাই Auth রেডি হওয়ার
+// পরই শুরু করা হয়।
+_fbAuthReady(function() {
+  (function initActivityLogListener() {
+    function attach() {
+      var db = window._db;
+      var mods = window._fbModules;
+      if (!db || !mods) { setTimeout(attach, 300); return; }
+      try {
+        var q = mods.query(
+          mods.collection(db, 'recentActivity'),
+          mods.orderBy('createdAt', 'desc')
+        );
+        mods.onSnapshot(q, function(snap) {
+          var rows = snap.docs.map(function(d) {
+            var data = d.data();
+            return {
+              id: d.id,
+              admin: data.admin || 'এডমিন',
+              task: data.task || '',
+              time: data.time || '',
+              status: data.status || 'note',
+              star: data.star || 0
+            };
+          });
+          if (rows.length > 20) rows = rows.slice(0, 20);
+          window.activityLog = rows;
+          activityLog = rows;
+          renderRecentActivity();
+        }, function(err) {
+          console.error('activityLog onSnapshot error:', err);
         });
-        if (rows.length > 20) rows = rows.slice(0, 20);
-        window.activityLog = rows;
-        activityLog = rows;
-        renderRecentActivity();
-      }, function(err) {
-        console.error('activityLog onSnapshot error:', err);
-      });
-    } catch(e) {
-      console.error('initActivityLogListener error:', e);
+      } catch(e) {
+        console.error('initActivityLogListener error:', e);
+      }
     }
-  }
-  attach();
-})();
+    attach();
+  })();
+});
 
 // ── নতুন কার্যক্রম Firestore-এ সেভ করো (এবং লোকাল লিস্টও আপডেট করো) ──
 window.addRecentActivity = async function(item) {
