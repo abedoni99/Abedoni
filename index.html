@@ -25,8 +25,15 @@
   };
 
   const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
   const auth = getAuth(app);
+  // মোবাইলে "TypeError: Failed to fetch" এড়াতে long polling চালু করো
+  let db;
+  try {
+    const { initializeFirestore } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+    db = initializeFirestore(app, { experimentalForceLongPolling: true, useFetchStreams: false });
+  } catch(_) {
+    db = getFirestore(app);
+  }
 
   // ── Global helpers — window-এ রাখলে পুরনো কোডও ব্যবহার করতে পারবে ──
   window._db = db;
@@ -570,7 +577,7 @@
   // ── এডমিন তথ্য আপডেট করো (status, stats ইত্যাদি) ──
   window.fbUpdateAdmin = async function(id, data) {
     try {
-      await setDoc(doc(db, "admins", String(id)), data, { merge: true });
+      await updateDoc(doc(db, "admins", String(id)), data);
       return true;
     } catch(e) {
       console.error("fbUpdateAdmin error:", e);
@@ -28537,6 +28544,20 @@ function adminConfirmedLogout() {
           <input type="number" class="form-control" id="newAdminComm" value="65" min="0" max="100">
         </div>
       </div>
+      <div class="form-group" style="margin-top:4px;">
+        <label style="display:flex;align-items:center;gap:6px;">
+          Firebase UID *
+          <span style="font-size:11px;font-weight:400;color:var(--gray);">— Firebase Console → Authentication → Users থেকে কপি করুন</span>
+        </label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="text" class="form-control" id="newAdminUID" placeholder="যেমন: ic8nDj7ayYTIJC29loVIOnKiify2"
+            style="font-family:monospace;font-size:13px;letter-spacing:0.5px;">
+        </div>
+        <div style="margin-top:6px;font-size:11.5px;color:var(--gray);background:rgba(201,162,39,0.07);border:1px solid rgba(201,162,39,0.2);border-radius:7px;padding:7px 10px;">
+          <i class="fas fa-circle-info" style="color:var(--accent);margin-right:5px;"></i>
+          <b>কীভাবে পাবেন:</b> <a href="https://console.firebase.google.com" target="_blank" style="color:var(--accent);">Firebase Console</a> → Authentication → Users → এডমিনের email-এর পাশের UID কপি করুন
+        </div>
+      </div>
 
       <!-- Auto-generated Login Code display -->
       <div id="adminLoginCodeBox" style="display:none;margin-top:4px;background:linear-gradient(135deg,rgba(10,36,99,0.06),rgba(10,36,99,0.03));border:1.5px solid rgba(10,36,99,0.15);border-radius:var(--radius-sm);padding:14px 18px;">
@@ -30136,7 +30157,8 @@ function _startAdminsFbSync() {
               }
 
               const idx = state.admins.findIndex(function(a){ return String(a.id) === String(fa.id); });
-              const mergedId = isNaN(fa.id) ? fa.id : Number(fa.id);
+              /* UID সবসময় string রাখো — Number() করলে Firebase UID নষ্ট হয় */
+              const mergedId = String(fa.id);
               const merged = Object.assign({ id: mergedId }, fa);
               if (idx === -1) state.admins.push(merged);
               else state.admins[idx] = Object.assign({}, state.admins[idx], merged);
@@ -30725,6 +30747,11 @@ function goTo(key, el) {
   if (allInits[key]) setTimeout(() => allInits[key](), 50);
 }
 
+function initNotifications() {
+  // SA প্যানেলের নোটিফিকেশন সেকশন — listener আগেই fbListenAppNotifications দিয়ে চালু আছে
+  if (typeof tbRenderNotifDrop === 'function') { try { tbRenderNotifDrop(); } catch(e) {} }
+}
+
 function sAToggleSidebar() {
   var sb = document.getElementById('saSidebar');
   var ov = document.getElementById('saSidebarOverlay');
@@ -31242,68 +31269,105 @@ function onAdminPhoneInput(phone) {
 }
 
 async function addAdmin() {
-  if (window.currentAdminRole !== 'super-admin') { showToast('অনুমতি নেই', 'এই কাজ শুধুমাত্র Super Admin করতে পারবেন।', 'error'); return; }
-  const name  = document.getElementById('newAdminName').value.trim();
-  const phone = document.getElementById('newAdminPhone').value.trim();
-  const area  = document.getElementById('newAdminArea').value.trim() || 'অজ্ঞাত';
-  const code  = document.getElementById('newAdminCode').value || genCodeVal();
+  if (window.currentAdminRole !== 'super-admin') {
+    showToast('অনুমতি নেই', 'এই কাজ শুধুমাত্র Super Admin করতে পারবেন।', 'error'); return;
+  }
+  const name  = (document.getElementById('newAdminName').value || '').trim();
+  const phone = (document.getElementById('newAdminPhone').value || '').trim();
+  const area  = (document.getElementById('newAdminArea').value || '').trim() || 'অজ্ঞাত';
+  const uid   = (document.getElementById('newAdminUID').value || '').trim();
   const comm  = parseInt(document.getElementById('newAdminComm').value) || 65;
-  if (!name || !phone) { toast('নাম ও ফোন নম্বর আবশ্যক', 'error'); return; }
 
-  // কাস্টম TnC সংগ্রহ করো
-  const tncCommRate = parseInt(document.getElementById('tncCommRate')?.value) || comm;
-  const tncMaxJobs  = parseInt(document.getElementById('tncMaxJobs')?.value)  || 3;
-  const tncExtra    = (document.getElementById('tncExtraNote')?.value || '').trim();
-  const customTnC = {
-    commRate: tncCommRate,
-    maxJobs:  tncMaxJobs,
+  if (!name)  { toast('এডমিনের নাম দিন', 'error'); return; }
+  if (!phone) { toast('ফোন নম্বর দিন', 'error'); return; }
+  if (!uid)   { toast('Firebase UID দিন। Firebase Console → Authentication → Users থেকে কপি করুন।', 'error'); return; }
+  if (uid.length < 20) { toast('UID টি সঠিক নয়। Firebase Console থেকে আবার কপি করুন।', 'error'); return; }
+
+  // ইতিমধ্যে এই UID দিয়ে এডমিন আছে কিনা চেক করো
+  if (state.admins && state.admins.find(function(a){ return String(a.id) === uid; })) {
+    toast('এই UID দিয়ে ইতিমধ্যে একজন এডমিন আছেন।', 'error'); return;
+  }
+
+  // কাস্টম TnC
+  const tncCommRate = parseInt((document.getElementById('tncCommRate') || {}).value) || comm;
+  const tncMaxJobs  = parseInt((document.getElementById('tncMaxJobs')  || {}).value) || 3;
+  const tncExtra    = ((document.getElementById('tncExtraNote') || {}).value || '').trim();
+  const customTnC   = {
+    commRate:  tncCommRate,
+    maxJobs:   tncMaxJobs,
     extraNote: tncExtra || null,
     createdAt: new Date().toISOString()
   };
 
-  const newId = Date.now();
-  const colors = ['#1B3A8C','#2F6B4F','#7B2FBE','#C0392B','#C9A227','#2471A3','#1E8449'];
-  const adminColor = colors[state.admins.length % colors.length];
+  const colors     = ['#1B3A8C','#2F6B4F','#7B2FBE','#C0392B','#C9A227','#2471A3','#1E8449'];
+  const adminColor = colors[(state.admins || []).length % colors.length];
 
-  // Add to ADMIN_CREDENTIALS (লগইন Firebase Auth দিয়ে হয়, তাই code/phone রাখা হচ্ছে না)
-  ADMIN_CREDENTIALS.push({ name, firstLogin: true, customTnC, id: newId });
+  // Firebase UID-ই হবে এডমিনের id — লগইনের সময় মিলবে
+  const newAdminObj = {
+    id:         uid,
+    name:       name,
+    phone:      phone,
+    area:       area,
+    comm:       tncCommRate,
+    role:       'admin',
+    status:     'active',
+    online:     false,
+    tasks:      0,
+    done:       0,
+    revenue:    0,
+    firstLogin: true,
+    customTnC:  customTnC,
+    createdAt:  new Date().toISOString()
+  };
 
-  const newAdminObj = { id: newId, name, phone, area, code, pinHash: null, comm: tncCommRate, status: 'active', device: 'Android', online: false, tasks: 0, done: 0, revenue: 0, firstLogin: true, customTnC };
+  // Firestore-এ সেভ করো (doc id = Firebase UID)
+  const btn = document.querySelector('#addAdminModal .btn-accent');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> সংরক্ষণ হচ্ছে...'; }
 
-  // Add to main state
-  state.admins.push(newAdminObj);
-
-  // Firestore-এ সেভ করো — যেকোনো ডিভাইস থেকে এই এডমিন লগইন করতে পারবে
   try {
     if (typeof window.fbAddAdmin === 'function') {
-      window.fbAddAdmin(newAdminObj).then(function(ok) {
-        if (!ok) toast('সতর্কতা: ক্লাউডে সেভ করা যায়নি, ইন্টারনেট চেক করুন', 'error');
-      });
+      const ok = await window.fbAddAdmin(newAdminObj);
+      if (!ok) {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-user-plus"></i> নিয়োগ দিন'; }
+        toast('Firebase-এ সংরক্ষণ ব্যর্থ। UID সঠিক আছে কিনা এবং ইন্টারনেট চেক করুন।', 'error');
+        return;
+      }
     }
-  } catch(e) { console.error('fbAddAdmin call failed:', e); }
+  } catch(e) {
+    console.error('fbAddAdmin error:', e);
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-user-plus"></i> নিয়োগ দিন'; }
+    toast('ত্রুটি: ' + (e && e.message ? e.message : String(e)), 'error');
+    return;
+  }
 
-  // Add to p3state.chatContacts so they appear in live chat
+  // Local state-এ যোগ করো
+  if (!state.admins) state.admins = [];
+  state.admins.push(newAdminObj);
+
   if (typeof p3state !== 'undefined' && p3state.chatContacts) {
-    p3state.chatContacts.push({ id: newId, name, code, online: false, lastMsg: 'নতুন এডমিন', lastTime: '', unread: 0, color: adminColor });
+    p3state.chatContacts.push({ id: uid, name: name, online: false, lastMsg: 'নতুন এডমিন', lastTime: '', unread: 0, color: adminColor });
     if (!p3state.chatMessages) p3state.chatMessages = {};
-    p3state.chatMessages[newId] = [];
+    p3state.chatMessages[uid] = [];
     if (typeof renderChatContacts === 'function') renderChatContacts();
   }
 
   closeModal('addAdminModal');
 
-  // Reset form
-  document.getElementById('newAdminName').value = '';
+  // Form রিসেট করো
+  document.getElementById('newAdminName').value  = '';
   document.getElementById('newAdminPhone').value = '';
-  document.getElementById('newAdminArea').value = '';
-  document.getElementById('newAdminCode').value = '';
-  const box = document.getElementById('adminLoginCodeBox');
+  document.getElementById('newAdminArea').value  = '';
+  document.getElementById('newAdminUID').value   = '';
+  document.getElementById('newAdminComm').value  = '65';
+  var box = document.getElementById('adminLoginCodeBox');
   if (box) box.style.display = 'none';
+
+  if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-user-plus"></i> নিয়োগ দিন'; }
 
   renderAdminTable(); updateStats(); renderTracker(); renderChatContacts(); renderMonthly();
   if (typeof ltRenderAdminList === 'function') ltRenderAdminList();
   lsSave();
-  toast(name + ' — নিয়োগ সম্পন্ন। লগইন কোড: ' + code, 'success');
+  toast(name + ' — সফলভাবে নিয়োগ দেওয়া হয়েছে! এডমিনকে email ও password জানিয়ে দিন।', 'success');
 }
 
 function genCodeVal() {
@@ -32092,7 +32156,8 @@ function renderMonthly() {
        ৩) এডমিন পাবে = বাকির নিজস্ব কমিশন%
        ৪) কোম্পানি মোট = sc + বাকির (১০০ − এডমিন কমিশন)%
     */
-    const aComm       = (a.comm != null ? a.comm : admPct);  /* প্রতিটি এডমিনের নিজস্ব কমিশন রেট */
+    /* কমিশন: customTnC.commRate → comm → global default — এই অগ্রাধিকারে */
+    const aComm       = (a.customTnC && a.customTnC.commRate != null) ? a.customTnC.commRate : (a.comm != null ? a.comm : admPct);
     const aCompPct    = 100 - aComm;
     const sc          = calcServiceCharge(totalFee);
     const remaining   = totalFee - sc;
@@ -32132,8 +32197,8 @@ function openAdminAppModal(adminId) {
 
   const globalAdmPct = state.commission?.admin ?? 65;
   const rate    = state.serviceCharge || 15;
-  /* এডমিনের নিজস্ব কমিশন রেট */
-  const admPct  = (admin.comm != null ? admin.comm : globalAdmPct);
+  /* কমিশন: customTnC.commRate → comm → global default */
+  const admPct  = (admin.customTnC && admin.customTnC.commRate != null) ? admin.customTnC.commRate : (admin.comm != null ? admin.comm : globalAdmPct);
   const compPct = 100 - admPct;
 
   /* মাসিক টেবিলে বর্তমানে যে মাস/বছর সিলেক্ট করা আছে — "বিস্তারিত"/PDF-এ ঠিক সেই মাসেরই হিসাব আসবে */
@@ -35348,14 +35413,41 @@ function updateSeoCount(el, countId, max) {
 var _ntItems = window._ntItems || [];
 
 function initNewsTicker() {
-  // window._ntItems Firebase onSnapshot লোড করে রেখেছে — sync করে render করো
+  // Firebase onSnapshot ইতিমধ্যে লোড করে থাকলে সেটা ব্যবহার করো
   if (Array.isArray(window._ntItems) && window._ntItems.length) {
     _ntItems = window._ntItems;
+    var chk = document.getElementById('ntToggle');
+    if (chk) _ntSyncToggleUI(chk, window._ntEnabled !== false);
+    _ntRender();
+    return;
   }
-  // টগল UI-এর বর্তমান অবস্থা সেট করো
-  const chk = document.getElementById('ntToggle');
-  if (chk) _ntSyncToggleUI(chk, window._ntEnabled !== false);
-  _ntRender();
+  // না থাকলে সরাসরি Firestore থেকে লোড করো
+  var db = window._db;
+  var mod = window._fbModules || {};
+  if (db && mod.doc && mod.getDoc) {
+    mod.getDoc(mod.doc(db, 'settings', 'newsTicker')).then(function(snap) {
+      if (snap && snap.exists && snap.exists()) {
+        var d = snap.data();
+        if (Array.isArray(d.items)) {
+          _ntItems = d.items;
+          window._ntItems = d.items;
+        }
+        window._ntEnabled = d.enabled !== false;
+      }
+      var chk = document.getElementById('ntToggle');
+      if (chk) _ntSyncToggleUI(chk, window._ntEnabled !== false);
+      _ntRender();
+    }).catch(function(e) {
+      console.error('initNewsTicker getDoc error:', e);
+      var chk = document.getElementById('ntToggle');
+      if (chk) _ntSyncToggleUI(chk, true);
+      _ntRender();
+    });
+  } else {
+    var chk = document.getElementById('ntToggle');
+    if (chk) _ntSyncToggleUI(chk, window._ntEnabled !== false);
+    _ntRender();
+  }
 }
 
 // টগল চেকবক্স স্টাইল সিঙ্ক করো
@@ -35377,25 +35469,28 @@ function _ntSyncToggleUI(chk, enabled) {
 // টগল পরিবর্তন হলে সাথে সাথে Firebase-এ লিখো
 function ntToggleChange(enabled) {
   window._ntEnabled = enabled;
-  // হোম পেজে তাৎক্ষণিক দেখাও/লুকাও
-  const ticker = document.getElementById('newsTicker');
+  var ticker = document.getElementById('newsTicker');
   if (ticker) ticker.style.display = enabled ? '' : 'none';
-  // Firebase-এ সেভ করো (items অপরিবর্তিত রাখো)
-  try {
-    const { doc, setDoc, serverTimestamp } = window._fbModules || {};
-    const db = window._db;
-    if (db && doc && setDoc && serverTimestamp) {
-      setDoc(doc(db, 'settings', 'newsTicker'),
-        { items: _ntItems, enabled, updatedAt: serverTimestamp() })
-        .then(() => {
-          if (typeof showToast === 'function')
-            showToast(enabled ? 'টিকার চালু' : 'টিকার বন্ধ',
-                      enabled ? 'হোম পেজে টিকার দেখা যাচ্ছে।' : 'হোম পেজে টিকার লুকানো হয়েছে।',
-                      enabled ? 'success' : 'info');
-        })
-        .catch(e => { console.error('ntToggleChange error:', e); });
-    }
-  } catch(e) { console.error('ntToggleChange error:', e); }
+  _ntSyncToggleUI(document.getElementById('ntToggle'), enabled);
+  var db = window._db;
+  var mod = window._fbModules || {};
+  if (db && mod.doc && mod.setDoc && mod.serverTimestamp) {
+    mod.setDoc(mod.doc(db, 'settings', 'newsTicker'), {
+      items: _ntItems,
+      enabled: enabled,
+      updatedAt: mod.serverTimestamp()
+    }).then(function() {
+      if (typeof showToast === 'function')
+        showToast(
+          enabled ? 'টিকার চালু' : 'টিকার বন্ধ',
+          enabled ? 'হোম পেজে টিকার দেখা যাচ্ছে।' : 'হোম পেজে টিকার লুকানো হয়েছে।',
+          enabled ? 'success' : 'info'
+        );
+    }).catch(function(e) {
+      console.error('ntToggleChange Firebase error:', e);
+      if (typeof showToast === 'function') showToast('ত্রুটি', 'Firebase আপডেট ব্যর্থ: ' + (e && e.code ? e.code : String(e)), 'error');
+    });
+  }
 }
 
 function _ntRender() {
@@ -35441,33 +35536,29 @@ function _ntUpdatePreview() {
 }
 
 function ntSave() {
-  // খালি আইটেম বাদ দাও
-  _ntItems = _ntItems.map(s => s.trim()).filter(Boolean);
-  if (!_ntItems.length) { if(typeof showToast==='function') showToast('ত্রুটি', 'অন্তত একটি বার্তা রাখুন।', 'error'); return; }
-  // global sync করো
+  _ntItems = _ntItems.map(function(s){ return s.trim(); }).filter(Boolean);
+  if (!_ntItems.length) {
+    if (typeof showToast === 'function') showToast('ত্রুটি', 'অন্তত একটি বার্তা রাখুন।', 'error');
+    return;
+  }
   window._ntItems = _ntItems;
-
-  // Firebase-এ সেভ করো
-  try {
-    const { doc, setDoc, serverTimestamp } = window._fbModules || {};
-    const db = window._db;
-    if (db && doc && setDoc && serverTimestamp) {
-      setDoc(doc(db, 'settings', 'newsTicker'), { items: _ntItems, enabled: window._ntEnabled !== false, updatedAt: serverTimestamp() })
-        .then(() => {
-          _applyTickerToPage();
-          if(typeof showToast==='function') showToast('সফল', 'নিউজ টিকার আপডেট হয়েছে!', 'success');
-        })
-        .catch(e => {
-          console.error('ntSave error:', e);
-          if(typeof showToast==='function') showToast('ত্রুটি', 'সংরক্ষণ করা যায়নি।', 'error');
-        });
-    } else {
+  var db = window._db;
+  var mod = window._fbModules || {};
+  if (db && mod.doc && mod.setDoc && mod.serverTimestamp) {
+    mod.setDoc(mod.doc(db, 'settings', 'newsTicker'), {
+      items: _ntItems,
+      enabled: window._ntEnabled !== false,
+      updatedAt: mod.serverTimestamp()
+    }).then(function() {
       _applyTickerToPage();
-      if(typeof showToast==='function') showToast('সফল', 'নিউজ টিকার পেজে আপডেট হয়েছে (লোকাল)।', 'success');
-    }
-  } catch(e) {
+      if (typeof showToast === 'function') showToast('সফল', 'নিউজ টিকার আপডেট হয়েছে!', 'success');
+    }).catch(function(e) {
+      console.error('ntSave Firebase error:', e);
+      if (typeof showToast === 'function') showToast('ত্রুটি', 'Firebase সংরক্ষণ ব্যর্থ: ' + (e && e.code ? e.code : String(e)), 'error');
+    });
+  } else {
     _applyTickerToPage();
-    if(typeof showToast==='function') showToast('সফল', 'নিউজ টিকার পেজে আপডেট হয়েছে।', 'success');
+    if (typeof showToast === 'function') showToast('সফল', 'টিকার পেজে আপডেট হয়েছে।', 'info');
   }
   _ntRender();
 }
