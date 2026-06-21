@@ -13723,35 +13723,34 @@ function cpRenderMessages(msgs) {
       var db = window._db;
       var mods = window._fbModules;
       if (db && mods && key && key !== 'x') {
-        // রিভিউ সেভ + ট্র্যাকিং disabled + আবেদনের status "সম্পন্ন" করো একসাথে
-        var _dfCharge  = parseFloat((document.getElementById('dfmCharge')  || {}).value || '0') || 0;
-        var _dfService = (document.getElementById('dfmService') || {}).value || '';
-        var _dfAdminId = (typeof currentAdmin !== 'undefined' && currentAdmin) ? String(currentAdmin.id) : '';
+        // রিভিউ সেভ + ট্র্যাকিং disabled + আবেদনের status "সম্পন্ন" করো একসাথে।
+        // (appliedAmount/serviceName/acceptedBy এখানে লেখা হয় না — এডমিন
+        //  sendDeliveryForm()-এ পাঠানোর সময়ই সেভ করে রাখে, নিরাপত্তার জন্য)
+        var _dfCharge  = parseFloat((document.getElementById('dfCharge_' + key)  || {}).value || '0') || 0;
+        var _dfService = (document.getElementById('dfService_' + key) || {}).value || '';
+        var _dfAdminId = (document.getElementById('dfAdminId_' + key) || {}).value
+          || ((typeof currentAdmin !== 'undefined' && currentAdmin) ? String(currentAdmin.id) : '');
+
         mods.updateDoc(mods.doc(db, 'applications', key), {
           review: reviewData,
           trackingDisabled: true,
           deliveryCompleted: true,
           deliveryCompletedAt: new Date().toISOString(),
-          status: 3,
-          appliedAmount: _dfCharge,
-          serviceName: _dfService,
-          acceptedBy: _dfAdminId
+          status: 3
+        }).then(function(){
+          // ── আবেদনের আপডেট কনফার্ম হওয়ার পরই চ্যাট/নোটিফিকেশন ক্লিনআপ শুরু করো —
+          //    আগে-পরে করলে rules-এর deliveryCompleted চেক ব্যর্থ হতে পারে। ──
+          if (typeof window.fbCompleteNotificationByAppId === 'function') {
+            window.fbCompleteNotificationByAppId(key, {
+              appliedAmount: _dfCharge,
+              serviceName:   _dfService,
+              acceptedBy:    _dfAdminId
+            }).catch(function(e){ console.error('auto-complete notification error:', e); });
+          }
+          if (typeof window.fbDeleteChatData === 'function') {
+            window.fbDeleteChatData(key).catch(function(e){ console.error('auto-delete chat data error:', e); });
+          }
         }).catch(function(e){ console.error('dfSubmitForm firebase error:', e); });
-
-        // ── এডমিন প্যানেলের "গ্রহণ করা" নোটিফিকেশনটি স্বয়ংক্রিয়ভাবে "কমপ্লিট" সেশনে নিয়ে যাও ──
-        // (ম্যানুয়ালি "সম্পন্ন করুন" বাটনে ক্লিক করার প্রয়োজন নেই)
-        if (typeof window.fbCompleteNotificationByAppId === 'function') {
-          window.fbCompleteNotificationByAppId(key, {
-            appliedAmount: _dfCharge,
-            serviceName:   _dfService,
-            acceptedBy:    _dfAdminId
-          }).catch(function(e){ console.error('auto-complete notification error:', e); });
-        }
-
-        // ── এডমিনের চ্যাট লিস্ট থেকে এই ক্লায়েন্টের চ্যাট ইনবক্স সব ডেটা সহ স্থায়ীভাবে ডিলিট করো ──
-        if (typeof window.fbDeleteChatData === 'function') {
-          window.fbDeleteChatData(key).catch(function(e){ console.error('auto-delete chat data error:', e); });
-        }
       }
     } catch(e) { console.error('dfSubmitForm firebase error:', e); }
 
@@ -21747,14 +21746,25 @@ function sendDeliveryForm() {
 
   // ── Firebase-এ ক্লায়েন্টের ইনবক্সে পাঠাও ──
   if (_activeChatAppId && typeof window.fbAdminSendToClient === 'function') {
-    const deliveryHtml = `<div style="padding:0;overflow:hidden;border-radius:12px;min-width:220px;max-width:min(290px,85vw);box-shadow:0 2px 12px rgba(16,163,74,0.15);"><div style="background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;padding:10px 14px;display:flex;align-items:center;gap:8px;"><i class="fas fa-file-circle-check" style="color:#bbf7d0;"></i><span style="font-weight:700;font-size:13px;">ডেলিভারি নিশ্চিতকরণ</span><span style="margin-left:auto;font-size:10px;background:rgba(255,255,255,0.2);color:#fff;padding:2px 7px;border-radius:50px;">সম্পন্ন ✓</span></div><div style="background:#fff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;padding:12px 14px;font-size:13px;color:#1e293b;font-family:sans-serif;"><div style="margin-bottom:9px;"><div style="color:#64748b;font-size:11px;">সার্ভিস</div><div style="font-weight:700;color:#16a34a;">${svcVal}</div><div style="font-size:12px;color:#64748b;margin-top:2px;">সার্ভিস চার্জ — <strong style="color:#1e293b;">৳ ${chargeNum.toLocaleString('bn-BD')}</strong></div></div><div style="display:flex;gap:8px;margin-bottom:9px;"><div style="flex:1;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:7px 9px;"><div style="color:#64748b;font-size:10px;margin-bottom:2px;">📥 আবেদন গ্রহণ</div><div style="font-size:12px;font-weight:600;">${fmtDt(recvVal)}</div></div><div style="flex:1;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:7px 9px;"><div style="color:#64748b;font-size:10px;margin-bottom:2px;">✅ ডেলিভারি</div><div style="font-size:12px;font-weight:600;">${fmtDt(delvVal)}</div></div></div><div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:9px 10px;font-size:12px;color:#92400e;line-height:1.65;margin-bottom:10px;">আপনার আবেদন সম্পন্ন হয়েছে। আপনি আপনার আবেদনের ইউজার আইডি-পাসওয়ার্ড/এডমিট কার্ড / রিসিট / আবেদন সংক্রান্ত প্রয়োজনীয় ডকুমেন্টস বুঝিয়া পাইলে নিচের ফরমটি পূরণ করে সাবমিট করুন।</div><div style="margin-bottom:10px;"><div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px;"><i class="fas fa-star" style="color:#f59e0b;margin-right:4px;"></i>এডমিনকে রিভিউ দিন</div><div id="dfStarRow_${_activeChatAppId || 'x'}" style="display:flex;gap:4px;margin-bottom:4px;"><span data-star="1" onclick="dfSetStar(this,'${_activeChatAppId || 'x'}',1)" style="font-size:26px;cursor:pointer;color:#d1d5db;transition:color 0.15s;">★</span><span data-star="2" onclick="dfSetStar(this,'${_activeChatAppId || 'x'}',2)" style="font-size:26px;cursor:pointer;color:#d1d5db;transition:color 0.15s;">★</span><span data-star="3" onclick="dfSetStar(this,'${_activeChatAppId || 'x'}',3)" style="font-size:26px;cursor:pointer;color:#d1d5db;transition:color 0.15s;">★</span><span data-star="4" onclick="dfSetStar(this,'${_activeChatAppId || 'x'}',4)" style="font-size:26px;cursor:pointer;color:#d1d5db;transition:color 0.15s;">★</span><span data-star="5" onclick="dfSetStar(this,'${_activeChatAppId || 'x'}',5)" style="font-size:26px;cursor:pointer;color:#d1d5db;transition:color 0.15s;">★</span></div><div id="dfStarLabel_${_activeChatAppId || 'x'}" style="font-size:11px;color:#94a3b8;min-height:14px;"></div><input type="hidden" id="dfStarVal_${_activeChatAppId || 'x'}" value="0"></div><div style="margin-bottom:10px;"><div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:5px;"><i class="fas fa-comment-dots" style="color:#7c3aed;margin-right:4px;"></i>অভিযোগ / মতামত <span style="font-weight:400;color:#94a3b8;">(ঐচ্ছিক)</span></div><textarea id="dfComplaintText_${_activeChatAppId || 'x'}" placeholder="কোনো সমস্যা বা পরামর্শ থাকলে এখানে লিখুন..." rows="3" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:12px;font-family:sans-serif;color:#1e293b;resize:none;outline:none;background:#fafafa;transition:border-color 0.2s;" onfocus="this.style.borderColor='#7c3aed'" onblur="this.style.borderColor='#e2e8f0'"></textarea></div><div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:10px 12px;margin-bottom:10px;"><div style="font-size:11px;color:#991b1b;line-height:1.7;margin-bottom:8px;">⚠️ <strong>সতর্কতা:</strong> সাবমিট করার পর আপনার চ্যাটের সম্পূর্ণ ডেটা ও আপলোড করা ফাইল স্থায়ীভাবে মুছে যাবে এবং এই ট্র্যাকিং আইডিটি চিরতরে নিষ্ক্রিয় হয়ে যাবে।</div><label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="dfWarnCheck_${_activeChatAppId || 'x'}" style="width:15px;height:15px;accent-color:#dc2626;cursor:pointer;flex-shrink:0;"><span style="font-size:12px;font-weight:600;color:#991b1b;">আমি বুঝেছি এবং সাবমিট করতে সম্মত আছি।</span></label></div><div><button id="dfSubmitBtn_${_activeChatAppId || 'x'}" onclick="dfSubmitForm('${_activeChatAppId || 'x'}')" style="width:100%;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:8px;padding:11px;font-family:sans-serif;font-size:13px;font-weight:700;cursor:pointer;">✅ ডেলিভারি বুঝিয়া পাইলাম — সাবমিট করুন</button></div></div></div>`;
+    const deliveryHtml = `<div style="padding:0;overflow:hidden;border-radius:12px;min-width:220px;max-width:min(290px,85vw);box-shadow:0 2px 12px rgba(16,163,74,0.15);"><div style="background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;padding:10px 14px;display:flex;align-items:center;gap:8px;"><i class="fas fa-file-circle-check" style="color:#bbf7d0;"></i><span style="font-weight:700;font-size:13px;">ডেলিভারি নিশ্চিতকরণ</span><span style="margin-left:auto;font-size:10px;background:rgba(255,255,255,0.2);color:#fff;padding:2px 7px;border-radius:50px;">সম্পন্ন ✓</span></div><div style="background:#fff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;padding:12px 14px;font-size:13px;color:#1e293b;font-family:sans-serif;"><div style="margin-bottom:9px;"><div style="color:#64748b;font-size:11px;">সার্ভিস</div><div style="font-weight:700;color:#16a34a;">${svcVal}</div><div style="font-size:12px;color:#64748b;margin-top:2px;">সার্ভিস চার্জ — <strong style="color:#1e293b;">৳ ${chargeNum.toLocaleString('bn-BD')}</strong></div></div><div style="display:flex;gap:8px;margin-bottom:9px;"><div style="flex:1;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:7px 9px;"><div style="color:#64748b;font-size:10px;margin-bottom:2px;">📥 আবেদন গ্রহণ</div><div style="font-size:12px;font-weight:600;">${fmtDt(recvVal)}</div></div><div style="flex:1;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:7px 9px;"><div style="color:#64748b;font-size:10px;margin-bottom:2px;">✅ ডেলিভারি</div><div style="font-size:12px;font-weight:600;">${fmtDt(delvVal)}</div></div></div><div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:9px 10px;font-size:12px;color:#92400e;line-height:1.65;margin-bottom:10px;">আপনার আবেদন সম্পন্ন হয়েছে। আপনি আপনার আবেদনের ইউজার আইডি-পাসওয়ার্ড/এডমিট কার্ড / রিসিট / আবেদন সংক্রান্ত প্রয়োজনীয় ডকুমেন্টস বুঝিয়া পাইলে নিচের ফরমটি পূরণ করে সাবমিট করুন।</div><div style="margin-bottom:10px;"><div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px;"><i class="fas fa-star" style="color:#f59e0b;margin-right:4px;"></i>এডমিনকে রিভিউ দিন</div><div id="dfStarRow_${_activeChatAppId || 'x'}" style="display:flex;gap:4px;margin-bottom:4px;"><span data-star="1" onclick="dfSetStar(this,'${_activeChatAppId || 'x'}',1)" style="font-size:26px;cursor:pointer;color:#d1d5db;transition:color 0.15s;">★</span><span data-star="2" onclick="dfSetStar(this,'${_activeChatAppId || 'x'}',2)" style="font-size:26px;cursor:pointer;color:#d1d5db;transition:color 0.15s;">★</span><span data-star="3" onclick="dfSetStar(this,'${_activeChatAppId || 'x'}',3)" style="font-size:26px;cursor:pointer;color:#d1d5db;transition:color 0.15s;">★</span><span data-star="4" onclick="dfSetStar(this,'${_activeChatAppId || 'x'}',4)" style="font-size:26px;cursor:pointer;color:#d1d5db;transition:color 0.15s;">★</span><span data-star="5" onclick="dfSetStar(this,'${_activeChatAppId || 'x'}',5)" style="font-size:26px;cursor:pointer;color:#d1d5db;transition:color 0.15s;">★</span></div><div id="dfStarLabel_${_activeChatAppId || 'x'}" style="font-size:11px;color:#94a3b8;min-height:14px;"></div><input type="hidden" id="dfStarVal_${_activeChatAppId || 'x'}" value="0"><input type="hidden" id="dfCharge_${_activeChatAppId || 'x'}" value="${chargeNum}"><input type="hidden" id="dfService_${_activeChatAppId || 'x'}" value="${escHtml(svcVal)}"><input type="hidden" id="dfAdminId_${_activeChatAppId || 'x'}" value="${escHtml(String((typeof currentAdmin!=='undefined'&&currentAdmin&&currentAdmin.id)||''))}"></div><div style="margin-bottom:10px;"><div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:5px;"><i class="fas fa-comment-dots" style="color:#7c3aed;margin-right:4px;"></i>অভিযোগ / মতামত <span style="font-weight:400;color:#94a3b8;">(ঐচ্ছিক)</span></div><textarea id="dfComplaintText_${_activeChatAppId || 'x'}" placeholder="কোনো সমস্যা বা পরামর্শ থাকলে এখানে লিখুন..." rows="3" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:12px;font-family:sans-serif;color:#1e293b;resize:none;outline:none;background:#fafafa;transition:border-color 0.2s;" onfocus="this.style.borderColor='#7c3aed'" onblur="this.style.borderColor='#e2e8f0'"></textarea></div><div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:8px;padding:10px 12px;margin-bottom:10px;"><div style="font-size:11px;color:#991b1b;line-height:1.7;margin-bottom:8px;">⚠️ <strong>সতর্কতা:</strong> সাবমিট করার পর আপনার চ্যাটের সম্পূর্ণ ডেটা ও আপলোড করা ফাইল স্থায়ীভাবে মুছে যাবে এবং এই ট্র্যাকিং আইডিটি চিরতরে নিষ্ক্রিয় হয়ে যাবে।</div><label style="display:flex;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="dfWarnCheck_${_activeChatAppId || 'x'}" style="width:15px;height:15px;accent-color:#dc2626;cursor:pointer;flex-shrink:0;"><span style="font-size:12px;font-weight:600;color:#991b1b;">আমি বুঝেছি এবং সাবমিট করতে সম্মত আছি।</span></label></div><div><button id="dfSubmitBtn_${_activeChatAppId || 'x'}" onclick="dfSubmitForm('${_activeChatAppId || 'x'}')" style="width:100%;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:8px;padding:11px;font-family:sans-serif;font-size:13px;font-weight:700;cursor:pointer;">✅ ডেলিভারি বুঝিয়া পাইলাম — সাবমিট করুন</button></div></div></div>`;
     window.fbAdminSendToClient(_activeChatAppId, deliveryHtml, null, null, true);
   }
 
   closeDeliveryModal();
 
-  // ── ট্র্যাকিং পোর্টালের অবস্থা: ডেলিভারি ফরম পাঠানো হলো — "সম্পন্ন" ধাপ ফিলআপ করো ──
-  if (typeof window.fbUpdateStatus === 'function' && _activeChatAppId) {
+  // ── ট্র্যাকিং পোর্টালের অবস্থা: ডেলিভারি ফরম পাঠানো হলো — "সম্পন্ন" ধাপ ফিলআপ করো,
+  //    এবং সার্ভিস চার্জ/নাম/কোন-এডমিন এখনই (এডমিন লগইন থাকা অবস্থায়) সেভ করে রাখো —
+  //    ক্লায়েন্টকে পরে এই sensitive ফিল্ডগুলো লিখতে হয় না (নিরাপত্তার জন্য)। ──
+  if (_activeChatAppId && window._db && window._fbModules) {
+    try {
+      window._fbModules.updateDoc(window._fbModules.doc(window._db, 'applications', _activeChatAppId), {
+        status: 3,
+        appliedAmount: chargeNum,
+        serviceName: svcVal,
+        acceptedBy: (typeof currentAdmin !== 'undefined' && currentAdmin) ? String(currentAdmin.id) : ''
+      }).catch(function(e){ console.error('sendDeliveryForm applications update error:', e); });
+    } catch(e) { console.error('sendDeliveryForm applications update error:', e); }
+  } else if (typeof window.fbUpdateStatus === 'function' && _activeChatAppId) {
     window.fbUpdateStatus(_activeChatAppId, 3);
   }
 
@@ -30733,6 +30743,7 @@ function goTo(key, el) {
     if (_ms) _ms.value = String(_now.getMonth()+1);
     if (_ys) _ys.value = String(_now.getFullYear());
     if(typeof renderMonthly==='function') renderMonthly();
+    if (typeof _startAdminsFbSync === 'function') _startAdminsFbSync();
     if (typeof _startMonthlyFbSync === 'function') _startMonthlyFbSync();
     },
     /* lazy Firestore listener hooks — শুধু সংশ্লিষ্ট সেকশনে প্রথমবার ঢুকলেই চালু হয় */
@@ -34480,9 +34491,23 @@ document.addEventListener('DOMContentLoaded', function() {
    TOAST
 ============================= */
 function toast(msg, type='info') {
-  const c = document.getElementById('toastContainer');
+  // ── বাগ ফিক্স: পেজে দুটো id="toastContainer" আছে (duplicate ID), এবং
+  // সুপার এডমিন প্যানেলের overlay-এর z-index সর্বোচ্চ সম্ভব মান (2147483647) —
+  // তাই আগের toast container তার আড়ালে ঢাকা পড়ে অদৃশ্য হয়ে যেত (DOM-এ যোগ হতো,
+  // কিন্তু কখনো দেখা যেত না)। এখন body-এর সরাসরি, সবার উপরে একটা নির্ভরযোগ্য
+  // কন্টেইনার ব্যবহার করা হচ্ছে যাতে যেকোনো প্যানেল থেকেই toast দেখা যায়। ──
+  let c = document.getElementById('toastContainerGlobal');
+  if (!c) {
+    c = document.createElement('div');
+    c.id = 'toastContainerGlobal';
+    c.style.cssText = 'position:fixed;top:20px;right:20px;z-index:2147483647;display:flex;flex-direction:column;gap:10px;pointer-events:none;';
+    document.body.appendChild(c);
+  } else if (c.parentNode !== document.body || document.body.lastElementChild !== c) {
+    document.body.appendChild(c); // শেষ child হিসেবে রাখো যাতে stacking-এ সবার উপরে থাকে
+  }
   const t = document.createElement('div');
   t.className = 'toast '+type;
+  t.style.pointerEvents = 'auto';
   const icons = { success:'fa-circle-check', error:'fa-circle-xmark', info:'fa-circle-info' };
   t.innerHTML = `<i class="fas ${icons[type]||'fa-info-circle'}"></i><span>${escHtml(msg)}</span>`;
   c.appendChild(t);
@@ -37323,7 +37348,10 @@ document.addEventListener('keydown', e => {
         </div>
         <div style="font-size:16px;font-weight:700;color:var(--text-dark);margin-bottom:8px;line-height:1.4;">${n.title||'নোটিশ'}</div>
         <div style="font-size:14px;color:var(--text-mid);line-height:1.7;white-space:pre-wrap;">${n.body||''}</div>
-        ${!isRead ? `<div style="margin-top:14px;"><button onclick="nbMarkRead('${n.id}',event)" style="font-size:12px;font-weight:600;padding:6px 14px;border:1.5px solid #7B2FBE;background:transparent;color:#7B2FBE;border-radius:50px;cursor:pointer;font-family:'Hind Siliguri',sans-serif;transition:0.2s;" onmouseover="this.style.background='#7B2FBE';this.style.color='#fff'" onmouseout="this.style.background='transparent';this.style.color='#7B2FBE'"><i class="fas fa-check" style="margin-right:5px;"></i>পড়েছি</button></div>` : '<div style="margin-top:12px;font-size:12px;color:var(--gray);"><i class="fas fa-check-double" style="margin-right:4px;color:var(--green);"></i>পড়া হয়েছে</div>'}
+        <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        ${!isRead ? `<button onclick="nbMarkRead('${n.id}',event)" style="font-size:12px;font-weight:600;padding:6px 14px;border:1.5px solid #7B2FBE;background:transparent;color:#7B2FBE;border-radius:50px;cursor:pointer;font-family:'Hind Siliguri',sans-serif;transition:0.2s;" onmouseover="this.style.background='#7B2FBE';this.style.color='#fff'" onmouseout="this.style.background='transparent';this.style.color='#7B2FBE'"><i class="fas fa-check" style="margin-right:5px;"></i>পড়েছি</button>` : `<span style="font-size:12px;color:var(--gray);"><i class="fas fa-check-double" style="margin-right:4px;color:var(--green);"></i>পড়া হয়েছে</span>`}
+        ${(typeof window.currentAdminRole !== 'undefined' && window.currentAdminRole === 'super-admin') ? `<button onclick="nbDeleteNotice('${n.id}',event)" style="font-size:12px;font-weight:600;padding:6px 14px;border:1.5px solid #C0392B;background:transparent;color:#C0392B;border-radius:50px;cursor:pointer;font-family:'Hind Siliguri',sans-serif;transition:0.2s;" onmouseover="this.style.background='#C0392B';this.style.color='#fff'" onmouseout="this.style.background='transparent';this.style.color='#C0392B'"><i class="fas fa-trash" style="margin-right:5px;"></i>ডিলিট</button>` : ''}
+        </div>
       </div>`;
     }).join('');
   }
@@ -37372,6 +37400,18 @@ document.addEventListener('keydown', e => {
     window.fbMarkNoticeRead(noticeId, _currentAdminId);
   };
 
+  /* ── নোটিশ ডিলিট করো (শুধু সুপার এডমিন) — পুরোনো/ডেমো নোটিশ মুছতে ── */
+  window.nbDeleteNotice = function(noticeId, e) {
+    if (e) e.stopPropagation();
+    if (typeof window.fbDeleteNotice !== 'function') return;
+    if (!confirm('এই নোটিশটি স্থায়ীভাবে মুছে ফেলতে চান?')) return;
+    window.fbDeleteNotice(noticeId).then(function(ok) {
+      if (typeof toast === 'function') {
+        toast(ok ? 'নোটিশ মুছে ফেলা হয়েছে' : 'নোটিশ মুছতে সমস্যা হয়েছে', ok ? 'success' : 'error');
+      }
+    });
+  };
+
   /* ── এডমিন লগইনে hook করো ── */
   const _origAdminLogin = window.adminLoginSuccess;
   window.adminLoginSuccess = function(admin) {
@@ -37396,6 +37436,7 @@ document.addEventListener('keydown', e => {
       const sess = JSON.parse(localStorage.getItem('adminSession') || '{}');
       if (sess && sess.id) {
         currentAdmin = sess;
+        window.currentAdminRole = sess.role || 'admin';
         if (typeof window.adminLoginSuccess === 'function') window.adminLoginSuccess(sess);
 
         function _startSessionFbListeners() {
