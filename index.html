@@ -607,14 +607,54 @@
     }
   };
 
+  // ── Firestore-এ পাঠানোর আগে ডেটা পরিষ্কার করো ──
+  // (undefined ভ্যালু, function/DOM রেফারেন্স, এবং nested array — এগুলোই সাধারণত
+  //  "invalid nested entity" / "invalid-argument" এরর তৈরি করে)
+  function _fbSanitize(val) {
+    if (val === undefined) return null;
+    if (val === null || typeof val !== 'object') return val;
+    if (Array.isArray(val)) {
+      // Firestore-এ array-এর ভেতরে আরেকটা array সাপোর্ট করে না
+      return val.map(function(v) {
+        var sv = _fbSanitize(v);
+        return Array.isArray(sv) ? { items: sv } : sv;
+      });
+    }
+    if (val instanceof Date) return val;
+    var out = {};
+    Object.keys(val).forEach(function(k) {
+      var v = val[k];
+      if (v === undefined || typeof v === 'function') return; // drop unsupported
+      if (v && typeof v === 'object' && (v.nodeType || v instanceof Window)) return; // drop DOM refs
+      out[k] = _fbSanitize(v);
+    });
+    return out;
+  }
+
   // ── এডমিন তথ্য আপডেট করো (status, stats ইত্যাদি) ──
   window.fbUpdateAdmin = async function(id, data) {
     try {
-      await updateDoc(doc(db, "admins", String(id)), data);
+      const clean = _fbSanitize(data);
+      await updateDoc(doc(db, "admins", String(id)), clean);
       return true;
     } catch(e) {
-      console.error("fbUpdateAdmin error:", e);
+      console.error("fbUpdateAdmin error:", e, "data was:", data);
       return false;
+    }
+  };
+
+  // ── একটি এডমিনের সর্বশেষ Firestore data আনো (Super Admin profile view-এ ব্যবহার) ──
+  window.fbGetAdminProfile = async function(id, callback) {
+    try {
+      const snap = await getDoc(doc(db, "admins", String(id)));
+      if (snap.exists()) {
+        callback({ id: snap.id, ...snap.data() });
+      } else {
+        callback(null);
+      }
+    } catch(e) {
+      console.error("fbGetAdminProfile error:", e);
+      callback(null);
     }
   };
 
@@ -794,6 +834,18 @@
     }
   };
 
+
+  // ── অভিযোগ ডিলিট করো ──
+  window.fbDeleteComplaint = async function(fbId) {
+    try {
+      const { deleteDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+      await deleteDoc(doc(db, "complaints", String(fbId)));
+      return true;
+    } catch(e) {
+      console.error("fbDeleteComplaint error:", e.code, e.message);
+      return false;
+    }
+  };
   // ── সার্কুলার ডিলিট করো ──
   window.fbDeleteCircular = async function(circId) {
     try {
@@ -8819,17 +8871,18 @@
   </div>
 
   <!-- Admin মিনিমাইজ করার পর এই বাটন দেখা যাবে -->
-  <div id="returnToAdminBtn" style="display:none; position:fixed; bottom:80px; right:16px; z-index:9999;">
+  <div id="returnToAdminBtn" style="display:none; position:fixed; bottom:80px; right:16px; z-index:2147483640;">
     <button onclick="adminReturnToPanel()" title="অ্যাডমিনে ফিরুন" style="
       display:flex; align-items:center; justify-content:center;
       width:44px; height:44px;
       background: linear-gradient(135deg, var(--primary), var(--primary-light));
       color: var(--accent-light);
-      border: 1.5px solid rgba(201,162,39,0.4);
+      border: 1.5px solid rgba(201,162,39,0.45);
       border-radius: 50%;
       cursor: pointer;
-      box-shadow: 0 4px 18px rgba(10,36,99,0.45);
+      box-shadow: 0 4px 18px rgba(10,36,99,0.5), 0 0 0 0 rgba(201,162,39,0.3);
       transition: transform 0.22s ease, box-shadow 0.22s ease;
+      animation: adminReturnPulse 2.5s ease-in-out infinite;
       padding: 0;
     "
     onmouseover="this.style.transform='scale(1.12)';"
@@ -8837,14 +8890,20 @@
       <i class="fas fa-user-shield" style="font-size:18px; pointer-events:none;"></i>
     </button>
   </div>
+  <style>
+  @keyframes adminReturnPulse {
+    0%, 100% { box-shadow: 0 4px 18px rgba(10,36,99,0.55), 0 0 0 0 rgba(201,162,39,0.35); }
+    60% { box-shadow: 0 4px 18px rgba(10,36,99,0.55), 0 0 0 9px rgba(201,162,39,0); }
+  }
+  </style>
 
-  <div id="returnToSuperAdminBtn" style="display:none; position:fixed; bottom:80px; right:16px; z-index:9999;">
+  <div id="returnToSuperAdminBtn" style="display:none; position:fixed; bottom:80px; right:16px; z-index:2147483640;">
     <button onclick="saReturnToPanel()" title="সুপার অ্যাডমিনে ফিরুন" style="
       display:flex; align-items:center; justify-content:center;
       width:44px; height:44px;
       background: linear-gradient(135deg, #1A3A8C, #2E5FD9);
       color: #fff;
-      border: 1.5px solid rgba(100,160,255,0.35);
+      border: 1.5px solid rgba(100,160,255,0.4);
       border-radius: 50%;
       cursor: pointer;
       box-shadow: 0 4px 18px rgba(26,58,140,0.55);
@@ -15382,6 +15441,26 @@ window.addEventListener('scroll', updateBottomNav, { passive: true });
   </aside>
 </div>
 
+<!-- ===================== DETAIL MODAL ===================== -->
+<div class="modal-overlay detail-modal" id="detailOverlay" onclick="circCloseModal('detailOverlay', event)">
+  <div class="modal-box">
+    <div id="detailImgContainer"></div>
+    <div class="detail-body">
+      <div class="detail-meta-row" id="detailMeta"></div>
+      <div class="detail-title" id="detailTitle"></div>
+      <div class="detail-org" id="detailOrg"></div>
+      <div class="detail-desc" id="detailDesc"></div>
+      <a class="detail-link" id="detailLink" target="_blank" rel="noopener">
+        <i class="fas fa-arrow-up-right-from-square"></i> আবেদনের লিংকে যান
+      </a>
+    </div>
+    <div class="modal-foot" style="padding:0 28px 24px;display:flex;gap:12px;justify-content:flex-end;">
+      <button class="btn-cancel-modal" onclick="closeModalById('detailOverlay')">বন্ধ করুন</button>
+      <button class="btn-save-modal" onclick="applyFromDetail()"><i class="fas fa-pen-nib"></i> আবেদন করুন</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===================== FOOTER ===================== -->
 
 </div>
@@ -16710,22 +16789,22 @@ renderAll();
         <div class="stats-row">
           <div class="stat-card gold">
             <div class="s-label">নতুন আবেদন</div>
-            <div class="s-val">৩</div>
+            <div class="s-val" id="dash-new-apps">০</div>
             <div class="s-icon"><i class="fas fa-bell"></i></div>
           </div>
           <div class="stat-card blue">
             <div class="s-label">সক্রিয় চ্যাট</div>
-            <div class="s-val">২</div>
+            <div class="s-val" id="dash-active-chats">০</div>
             <div class="s-icon"><i class="fas fa-comments"></i></div>
           </div>
           <div class="stat-card green">
             <div class="s-label">পেমেন্ট সম্পন্ন</div>
-            <div class="s-val">৭</div>
+            <div class="s-val" id="dash-completed">০</div>
             <div class="s-icon"><i class="fas fa-circle-check"></i></div>
           </div>
           <div class="stat-card red">
             <div class="s-label">অপেক্ষারত</div>
-            <div class="s-val">২</div>
+            <div class="s-val" id="dash-pending">০</div>
             <div class="s-icon"><i class="fas fa-clock"></i></div>
           </div>
         </div>
@@ -16738,11 +16817,11 @@ renderAll();
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:28px;">
           <div class="stat-card" style="cursor:pointer;flex-direction:row;align-items:center;" onclick="switchPanel('notifications')">
             <div class="s-icon gold" style="background:rgba(201,162,39,0.12);color:var(--accent);width:44px;height:44px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;"><i class="fas fa-bell"></i></div>
-            <div style="margin-left:14px;"><div style="font-weight:700;font-size:14px;color:var(--primary);">আবেদন দেখুন</div><div style="font-size:12px;color:var(--gray);">৩টি নতুন আবেদন</div></div>
+            <div style="margin-left:14px;"><div style="font-weight:700;font-size:14px;color:var(--primary);">আবেদন দেখুন</div><div style="font-size:12px;color:var(--gray);" id="dash-qa-notif-text">নতুন আবেদন</div></div>
           </div>
           <div class="stat-card" style="cursor:pointer;flex-direction:row;align-items:center;" onclick="switchPanel('chat')">
             <div class="s-icon" style="background:rgba(10,36,99,0.08);color:var(--primary);width:44px;height:44px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;"><i class="fas fa-comments"></i></div>
-            <div style="margin-left:14px;"><div style="font-weight:700;font-size:14px;color:var(--primary);">চ্যাট খুলুন</div><div style="font-size:12px;color:var(--gray);">২টি সক্রিয় কথোপকথন</div></div>
+            <div style="margin-left:14px;"><div style="font-weight:700;font-size:14px;color:var(--primary);">চ্যাট খুলুন</div><div style="font-size:12px;color:var(--gray);" id="dash-qa-chat-text">সক্রিয় কথোপকথন</div></div>
           </div>
           <div class="stat-card" style="cursor:pointer;flex-direction:row;align-items:center;" onclick="switchPanel('notepad')">
             <div class="s-icon" style="background:rgba(201,162,39,0.12);color:var(--accent);width:44px;height:44px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;"><i class="fas fa-note-sticky"></i></div>
@@ -19096,18 +19175,20 @@ function pfSave() {
   }
   // ছবি
   const img = document.getElementById('pfPhotoPreview');
-  if (img && img.src && img.style.display !== 'none') data.photo = img.src;
+  if (img && img.src && img.style.display !== 'none') data.avatarData = img.src;
 
   // ── স্পর্শকাতর তথ্য (nid, phone, dob, address, education ইত্যাদি) শুধু Firestore-এ সেভ করো ──
+  // ⚠️ dot-notation দিয়ে merge করো, পুরো profileData ওভাররাইট করলে avatarData/course/extra
+  //    এর মতো অন্য ফাংশনের সেভ করা ফিল্ড মুছে যাবে।
   if (typeof currentAdmin !== 'undefined' && currentAdmin && currentAdmin.id && typeof window.fbUpdateAdmin === 'function') {
-    window.fbUpdateAdmin(currentAdmin.id, { profileData: data }).catch(function(e) {
-      console.error('pfSave fbUpdateAdmin error:', e);
-    });
+    const dotUpdate = {};
+    Object.keys(data).forEach(function(k) { dotUpdate['profileData.' + k] = data[k]; });
+    window.fbUpdateAdmin(currentAdmin.id, dotUpdate);
   }
 
   // ── localStorage-এ শুধু non-sensitive প্রদর্শন তথ্য রাখো ──
   try {
-    const toSaveLocal = { name: data.name, photo: data.photo, setupDone: data.setupDone, _locked: data._locked };
+    const toSaveLocal = { name: data.name, photo: data.avatarData, setupDone: data.setupDone, _locked: data._locked };
     localStorage.setItem(PF_STORAGE_KEY, JSON.stringify(toSaveLocal));
   } catch(e) {}
 
@@ -19120,15 +19201,18 @@ function pfSave() {
 function pfPhotoChange(input) {
   const file = input.files[0];
   if (!file) return;
-  if (file.size > 2 * 1024 * 1024) { showToast('ছবির আকার ২MB-এর বেশি হবে না', '', 'error'); return; }
+  if (file.size > 5 * 1024 * 1024) { showToast('ছবির আকার ৫MB-এর বেশি হবে না', '', 'error'); return; }
   const reader = new FileReader();
   reader.onload = e => {
-    const img = document.getElementById('pfPhotoPreview');
-    const ph  = document.getElementById('pfPhotoPlaceholder');
-    const nm  = document.getElementById('pfPhotoName');
-    if (img) { img.src = e.target.result; img.style.display = 'block'; }
-    if (ph)  ph.style.display = 'none';
-    if (nm)  nm.textContent = file.name;
+    /* crop modal খোলো — confirm হলে pfPhotoPreview-এ বসবে */
+    _openCropModal(e.target.result, function(croppedDataUrl) {
+      const img = document.getElementById('pfPhotoPreview');
+      const ph  = document.getElementById('pfPhotoPlaceholder');
+      const nm  = document.getElementById('pfPhotoName');
+      if (img) { img.src = croppedDataUrl; img.style.display = 'block'; }
+      if (ph)  ph.style.display = 'none';
+      if (nm)  nm.textContent = file.name;
+    });
   };
   reader.readAsDataURL(file);
 }
@@ -19532,6 +19616,54 @@ function appStatusLabel(step) {
   return APP_STATUS_LABELS[i] || APP_STATUS_LABELS[0];
 }
 
+// ── ড্যাশবোর্ড stat card রিয়েলটাইম আপডেট ──
+// notifs: app_notifications array (null হলে cache থেকে নেবে)
+// chats:  _acceptedChats array (null হলে গ্লোবাল থেকে নেবে)
+function updateDashboardStats(notifs, chats) {
+  try {
+    const allNotifs = notifs || _allNotifsCache || [];
+    const allChats  = chats  || (typeof _acceptedChats !== 'undefined' ? _acceptedChats : []);
+    const myId = String(_tbCurrentAdminId || (currentAdmin && currentAdmin.id) || '');
+
+    // নতুন আবেদন — কেউ accept করেনি, completed নয়, আমার কাছে দৃশ্যমান
+    const newApps = allNotifs.filter(function(n) {
+      if (n.acceptedBy && n.acceptedBy !== myId) return false;
+      return !n.acceptedBy && !n.completed;
+    }).length;
+
+    // সক্রিয় চ্যাট — আমি accept করেছি, completed হয়নি
+    const activeChats = allChats.length;
+
+    // সম্পন্ন — completed আবেদন যা আমি accept করেছিলাম
+    const completed = allNotifs.filter(function(n) {
+      return !!n.completed && n.acceptedBy === myId;
+    }).length;
+
+    // অপেক্ষারত — আমি accept করেছি কিন্তু সম্পন্ন হয়নি
+    const pending = allNotifs.filter(function(n) {
+      return n.acceptedBy === myId && !n.completed;
+    }).length;
+
+    // stat card আপডেট
+    var el;
+    el = document.getElementById('dash-new-apps');
+    if (el) el.textContent = toBanglaNum(newApps);
+    el = document.getElementById('dash-active-chats');
+    if (el) el.textContent = toBanglaNum(activeChats);
+    el = document.getElementById('dash-completed');
+    if (el) el.textContent = toBanglaNum(completed);
+    el = document.getElementById('dash-pending');
+    if (el) el.textContent = toBanglaNum(pending);
+
+    // quick action সাবটেক্ট আপডেট
+    var qaNotif = document.getElementById('dash-qa-notif-text');
+    if (qaNotif) qaNotif.textContent = newApps > 0 ? toBanglaNum(newApps) + 'টি নতুন আবেদন' : 'কোনো নতুন আবেদন নেই';
+    var qaChat = document.getElementById('dash-qa-chat-text');
+    if (qaChat) qaChat.textContent = activeChats > 0 ? toBanglaNum(activeChats) + 'টি সক্রিয় কথোপকথন' : 'কোনো সক্রিয় চ্যাট নেই';
+
+  } catch(e) { console.error('updateDashboardStats error:', e); }
+}
+
 // ── Notifications Panel রেন্ডার (Firebase data থেকে) ──
 function renderNotifPanel(notifs, adminId) {
   const listEl = document.getElementById('notifList');
@@ -19545,6 +19677,9 @@ function renderNotifPanel(notifs, adminId) {
   const bnBadge = document.getElementById('bnNotifBadge');
   if (badge) badge.textContent = notifCount > 0 ? toBanglaNum(notifCount) : '০';
   if (bnBadge) { bnBadge.textContent = toBanglaNum(notifCount); bnBadge.style.display = notifCount > 0 ? '' : 'none'; }
+
+  // ── ড্যাশবোর্ড stat আপডেট ──
+  updateDashboardStats(notifs);
 
   const filtered = notifs.filter(n => {
     // অন্যে accept করলে hide
@@ -19822,6 +19957,8 @@ function startAcceptedChatsListener(adminId) {
     _startBgMsgListeners(chats); // ← প্রতিটি ক্লায়েন্টের শেষ মেসেজ background-এ track করো
     renderAcceptedChatList();
     populateClientDropdowns();
+    // ── ড্যাশবোর্ড সক্রিয় চ্যাট সংখ্যা আপডেট ──
+    updateDashboardStats(null, chats);
   });
 }
 
@@ -23287,10 +23424,8 @@ function closeAdminModal() {
   document.body.style.overflow = '';
   var hero = document.getElementById('hero');
   if (hero) hero.scrollIntoView({ behavior: 'smooth' });
-  // history stack থেকে adminModalOpen entry সরাও (যদি থাকে)
-  if (history.state && history.state.adminModalOpen) {
-    history.back();
-  }
+  // history stack ক্লিন করো — কিন্তু back() না করে replaceState দিয়ে
+  history.replaceState({ adminModalOpen: false }, '');
 }
 
 // ফোনের ব্যাক বাটন — লগইন স্ক্রিন (এডমিন বা সুপার এডমিন) খোলা থাকলে
@@ -23315,6 +23450,33 @@ window.addEventListener('popstate', function(e) {
     window._saMinimized = false;
     return;
   }
+
+  // ── returnToAdminBtn দৃশ্যমান থাকলে admin minimize অবস্থায় আছে — বন্ধ করো না ──
+  var returnAdminBtn = document.getElementById('returnToAdminBtn');
+  if (returnAdminBtn && returnAdminBtn.style.display !== 'none' &&
+      returnAdminBtn.style.display !== '') {
+    return;
+  }
+
+  // ── returnToSuperAdminBtn দৃশ্যমান থাকলে SA minimize অবস্থায় আছে ──
+  var returnSaBtn = document.getElementById('returnToSuperAdminBtn');
+  if (returnSaBtn && returnSaBtn.style.display !== 'none' &&
+      returnSaBtn.style.display !== '') {
+    return;
+  }
+
+  // ── adminSession আছে এবং overlay বন্ধ আছে তাহলে minimize অবস্থা — বন্ধ করো না ──
+  try {
+    var sess = JSON.parse(localStorage.getItem('adminSession') || '{}');
+    if (sess && sess.id) {
+      var adminOverlayCheck = document.getElementById('adminModalOverlay');
+      if (adminOverlayCheck && adminOverlayCheck.style.display === 'none') {
+        // minimize অবস্থায় আছে — শুধু return bubble নিশ্চিত করো
+        if (returnAdminBtn) returnAdminBtn.style.setProperty('display', 'flex', 'important');
+        return;
+      }
+    }
+  } catch(_e) {}
 
   // ── এডমিন লগইন মোডাল বা এডমিন প্যানেল খোলা থাকলে বন্ধ করো ──
   var adminOverlay = document.getElementById('adminModalOverlay');
@@ -23349,20 +23511,22 @@ function adminMinimizePanel() {
   document.body.style.overflow = '';
   var returnBtn = document.getElementById('returnToAdminBtn');
   if (returnBtn) returnBtn.style.setProperty('display', 'flex', 'important');
-  if (history.state && history.state.adminModalOpen) {
-    history.back();
-  }
+  // ── history.back() সরানো হয়েছে — এটা popstate trigger করে প্যানেল বন্ধ করে দিত ──
+  // পরিবর্তে history state আপডেট করো (মিনিমাইজড অবস্থায় back/reload নিরাপদ করতে)
+  history.replaceState({ adminMinimized: true }, '');
   var hero = document.getElementById('hero');
   if (hero) hero.scrollIntoView({ behavior: 'smooth' });
   else window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function adminReturnToPanel() {
+  window._adminMinimized = false;
   var returnBtn = document.getElementById('returnToAdminBtn');
   if (returnBtn) returnBtn.style.display = 'none';
   var overlay = document.getElementById('adminModalOverlay');
   if (overlay) overlay.style.display = 'block';
   document.body.style.overflow = 'hidden';
+  history.replaceState({ adminModalOpen: true, panel: typeof _currentPanel !== 'undefined' ? _currentPanel : 'dashboard' }, '');
 }
 
 function adminLogoutConfirm() {
@@ -24305,7 +24469,7 @@ function adminConfirmedLogout() {
   padding: 20px 24px; border-bottom: 1px solid var(--gray-light);
   flex-shrink: 0;
 }
-#superAdminWrapper .modal-head h3 { font-size: 17px; font-weight: 700; }
+#superAdminWrapper .modal-head h3 { font-size: 17px; font-weight: 700; color: var(--text-dark, #1a1a2e); }
 #superAdminWrapper .modal-close { background: none; border: none; font-size: 18px; color: var(--gray); cursor: pointer; padding: 4px; border-radius: 6px; transition: var(--transition); }
 #superAdminWrapper .modal-close:hover { background: var(--gray-light); color: var(--text-dark); }
 #superAdminWrapper .modal-body { padding: 24px; overflow-y: auto; flex: 1; }
@@ -26747,13 +26911,13 @@ function adminConfirmedLogout() {
         <select class="form-control" style="width:160px;" id="monthSelect" onchange="window._monthlyUserChanged=true;renderMonthly()">
           <option value="1">জানুয়ারি</option><option value="2">ফেব্রুয়ারি</option>
           <option value="3">মার্চ</option><option value="4">এপ্রিল</option>
-          <option value="5">মে</option><option value="6">জুন</option>
+          <option value="5">মে</option><option value="6" selected>জুন</option>
           <option value="7">জুলাই</option><option value="8">আগস্ট</option>
           <option value="9">সেপ্টেম্বর</option><option value="10">অক্টোবর</option>
           <option value="11">নভেম্বর</option><option value="12">ডিসেম্বর</option>
         </select>
         <select class="form-control" style="width:110px;" id="yearSelect" onchange="window._monthlyUserChanged=true;renderMonthly()">
-          <option value="2025">২০২৫</option><option value="2026">২০২৬</option><option value="2027">২০২৭</option>
+          <option value="2024">২০২৪</option><option value="2025">২০২৫</option><option value="2026" selected>২০২৬</option><option value="2027">২০২৭</option>
         </select>
         <div style="margin-left:auto;display:flex;gap:10px;flex-wrap:wrap;">
           <button class="btn btn-primary" onclick="openAddAppModal()">
@@ -28632,13 +28796,9 @@ function adminConfirmedLogout() {
         </div>
       </div>
       <div class="form-row">
-        <div class="form-group">
+        <div class="form-group" style="grid-column:1/-1;">
           <label>এলাকা / জেলা</label>
           <input type="text" class="form-control" id="newAdminArea" placeholder="যেমন: ঢাকা, চট্টগ্রাম">
-        </div>
-        <div class="form-group">
-          <label>কমিশন (%)</label>
-          <input type="number" class="form-control" id="newAdminComm" value="65" min="0" max="100">
         </div>
       </div>
       <div class="form-group" style="margin-top:4px;">
@@ -28669,40 +28829,34 @@ function adminConfirmedLogout() {
       </div>
       <input type="hidden" id="newAdminCode" value="">
 
-      <!-- কাস্টম TnC -->
-      <div style="margin-top:16px;">
+      <!-- চুক্তির শর্তাবলী — সম্পূর্ণ CRUD -->
+      <div style="margin-top:16px;" id="tncConditionsSection">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-          <div style="font-size:12px;font-weight:700;color:#0A2463;"><i class="fas fa-file-pen" style="color:#C9A227;margin-right:6px;"></i>সম্মতিপত্র কাস্টমাইজ করুন</div>
-          <button onclick="tncCustomToggle()" style="background:rgba(10,36,99,0.07);border:none;border-radius:8px;padding:5px 11px;font-size:11.5px;font-weight:600;color:#0A2463;cursor:pointer;font-family:inherit;">
-            <i class="fas fa-pen" style="margin-right:4px;"></i><span id="tncCustomToggleLabel">সম্পাদনা করুন</span>
+          <div style="font-size:12px;font-weight:700;color:#0A2463;"><i class="fas fa-file-shield" style="color:#C9A227;margin-right:6px;"></i>চুক্তির শর্তাবলী</div>
+          <button onclick="tncAddCondition()" style="background:#0A2463;border:none;border-radius:8px;padding:5px 12px;font-size:11.5px;font-weight:600;color:#fff;cursor:pointer;font-family:inherit;">
+            <i class="fas fa-plus" style="margin-right:4px;"></i>শর্ত যোগ করুন
           </button>
         </div>
-        <div id="tncCustomEditor" style="display:none;">
-          <div style="font-size:11.5px;color:#888;margin-bottom:10px;background:rgba(201,162,39,0.08);border:1px solid rgba(201,162,39,0.2);border-radius:8px;padding:9px 12px;">
-            <i class="fas fa-circle-info" style="color:#C9A227;margin-right:5px;"></i>
-            শুধু পরিবর্তনযোগ্য অংশগুলো এখানে সম্পাদনা করুন। বাকি শর্তাবলী ডিফল্ট থাকবে।
+        <div id="tncConditionsList" style="display:flex;flex-direction:column;gap:7px;margin-bottom:10px;max-height:260px;overflow-y:auto;padding-right:2px;"></div>
+        <!-- Add / Edit ইনপুট বক্স -->
+        <div id="tncConditionInputBox" style="display:none;background:rgba(10,36,99,0.04);border:1.5px solid rgba(10,36,99,0.15);border-radius:9px;padding:12px 14px;margin-bottom:8px;">
+          <div style="font-size:11.5px;font-weight:700;color:#0A2463;margin-bottom:8px;" id="tncCondInputLabel"><i class="fas fa-pen" style="margin-right:5px;color:#C9A227;"></i>শর্ত সম্পাদনা</div>
+          <select id="tncCondType" class="form-control" style="margin-bottom:8px;font-size:12.5px;" onchange="tncCondTypeChange()">
+            <option value="normal">সাধারণ শর্ত</option>
+            <option value="warn">সতর্কতামূলক শর্ত ⚠️</option>
+          </select>
+          <input type="text" id="tncCondTitle" class="form-control" style="margin-bottom:8px;font-size:12.5px;" placeholder="শিরোনাম (যেমন: ক্লায়েন্ট ডেটা সুরক্ষা)">
+          <textarea id="tncCondTextVal" class="form-control" rows="2" style="margin-bottom:10px;font-size:12.5px;" placeholder="শর্তের বিবরণ লিখুন..."></textarea>
+          <div style="display:flex;gap:8px;">
+            <button onclick="tncCondSave()" style="background:#0A2463;border:none;border-radius:7px;padding:6px 16px;font-size:12px;font-weight:600;color:#fff;cursor:pointer;font-family:inherit;flex:1;"><i class="fas fa-check" style="margin-right:4px;"></i>সংরক্ষণ</button>
+            <button onclick="tncCondCancel()" style="background:rgba(0,0,0,0.07);border:none;border-radius:7px;padding:6px 12px;font-size:12px;font-weight:600;color:#555;cursor:pointer;font-family:inherit;">বাতিল</button>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-            <div class="form-group" style="margin:0;">
-              <label style="font-size:11.5px;">কমিশন হার (%)</label>
-              <input type="number" class="form-control" id="tncCommRate" min="0" max="100" placeholder="৬৫">
-            </div>
-            <div class="form-group" style="margin:0;">
-              <label style="font-size:11.5px;">সর্বোচ্চ একসাথে কাজ</label>
-              <input type="number" class="form-control" id="tncMaxJobs" min="1" max="20" placeholder="৩">
-            </div>
-            <div class="form-group" style="margin:0;grid-column:1/-1;">
-              <label style="font-size:11.5px;">বিশেষ চুক্তি / অতিরিক্ত শর্ত (ঐচ্ছিক)</label>
-              <textarea class="form-control" id="tncExtraNote" rows="3" placeholder="যেমন: রেফারেল বোনাস ৫%, নির্দিষ্ট এলাকায় কাজ করতে হবে ইত্যাদি..."></textarea>
-            </div>
-          </div>
-        </div>
-        <div id="tncCustomPreview" style="background:rgba(10,36,99,0.04);border:1.5px solid rgba(10,36,99,0.1);border-radius:9px;padding:11px 14px;font-size:12.5px;color:#333;line-height:1.7;font-family:'Hind Siliguri',sans-serif;">
-          <i class="fas fa-shield-halved" style="color:#C9A227;margin-right:6px;"></i>
-          প্রথমবার লগইনের পর এডমিনকে শর্তাবলী পড়ে সম্মতি দিতে হবে।<br>
-          কমিশন: <b id="tncPreviewComm">৬৫%</b> &nbsp;|&nbsp; সর্বোচ্চ একসাথে কাজ: <b id="tncPreviewJobs">৩টি</b>
         </div>
       </div>
+      <!-- hidden legacy ids for backward compat -->
+      <input type="hidden" id="tncCommRate">
+      <input type="hidden" id="tncMaxJobs">
+      <input type="hidden" id="tncExtraNote">
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="closeModal('addAdminModal')">বাতিল</button>
@@ -29926,7 +30080,7 @@ function openSuperAdminPanel() {
   history.pushState({ superAdminOpen: true }, '');
   // মেইন সাইটের সব fixed element লুকাও
   document.querySelectorAll('.navbar, .mobile-menu, .mobile-bottom-nav, .fab-btn, .whatsapp-float, .scroll-top, [class*="float"], [class*="fab"]').forEach(function(el){
-    if (!el.closest('#superAdminWrapper')) el.style.setProperty('display','none','important');
+    if (!el.closest('#superAdminWrapper') && !el.closest('#eruda')) el.style.setProperty('display','none','important');
   });
   // wrapper render হওয়ার পর loginPage দেখাই (double rAF trick)
   requestAnimationFrame(() => {
@@ -30193,7 +30347,13 @@ function _startComplaintsFbSync() {
     (function waitForFbComplaints(retries) {
       if (typeof window.fbListenComplaints === 'function') {
         window.fbListenComplaints(function(fbComplaints) {
-          state.complaints = (fbComplaints || []).map(function(fc) {
+          // deleted ও demo অভিযোগ বাদ দাও
+          const _demoComplaintNames = ['রাহেলা বেগম','করিম সাহেব','সুমাইয়া আক্তার'];
+          fbComplaints = (fbComplaints || []).filter(function(fc){
+            return !_deletedComplaintIds.includes(String(fc._fbId))
+              && !_demoComplaintNames.includes(fc.name);
+          });
+          state.complaints = fbComplaints.map(function(fc) {
             return {
               _fbId: fc._fbId,
               id: fc._fbId,
@@ -30240,7 +30400,9 @@ function _startAdminsFbSync() {
             const _demoPhones = ['01711111111','01722222222','01733333333','01744444444'];
             const _demoIds    = [1,2,3,4];
             const _realAdmins = fsAdmins.filter(function(fa) {
-              return !_demoPhones.includes(fa.phone) && !_demoIds.includes(Number(fa.id));
+              return !_demoPhones.includes(fa.phone)
+                && !_demoIds.includes(Number(fa.id))
+                && !_deletedAdminIds.includes(String(fa.id));
             });
             _realAdmins.forEach(function(fa) {
               const credIdx = ADMIN_CREDENTIALS.findIndex(function(c){ return String(c.id) === String(fa.id); });
@@ -30329,7 +30491,11 @@ function _startMonthlyFbSync() {
           else if (ts && ts.seconds) { dt = new Date(ts.seconds * 1000); }
           if (dt) {
             tsMs = dt.getTime();
-            dateStr = dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0');
+            // ── লোকাল টাইমজোন (BD = UTC+6) দিয়ে তারিখ বানাও — UTC দিলে রাতের কাজ পরের মাসে চলে যায় ──
+            var localY = dt.getFullYear();
+            var localM = dt.getMonth() + 1;  // getMonth() লোকাল টাইমজোনে
+            var localD = dt.getDate();
+            dateStr = localY + '-' + String(localM).padStart(2,'0') + '-' + String(localD).padStart(2,'0');
             var h = dt.getHours();
             var period = h < 12 ? 'সকাল' : h < 17 ? 'দুপুর' : 'বিকেল';
             var h12 = h > 12 ? h - 12 : h === 0 ? 12 : h;
@@ -30348,11 +30514,13 @@ function _startMonthlyFbSync() {
           };
         });
         state.applications = localOnly.concat(fbMapped);
-        /* sec-monthly active থাকলে সাথে সাথে render */
-        var monthlySec = document.getElementById('sec-monthly');
-        if (monthlySec && monthlySec.classList.contains('active')) {
+        /* Firebase data এলেই renderMonthly — sec-monthly active থাকুক বা না থাকুক।
+           যখন active থাকবে তখন সাথে সাথেই দেখাবে, না থাকলেও data ready থাকবে।
+           admins এখনো load না হলে একটু অপেক্ষা করো। */
+        if (typeof _startAdminsFbSync === 'function') _startAdminsFbSync();
+        setTimeout(function() {
           if (typeof renderMonthly === 'function') renderMonthly();
-        }
+        }, state.admins && state.admins.length > 0 ? 0 : 800);
       } catch(e2) { console.error('monthly data listener error:', e2); }
     });
   });
@@ -30834,14 +31002,30 @@ function goTo(key, el) {
   const p3inits = { landingEditor:initLandingEditor, aboutEdit:initAboutEdit, newsTicker:initNewsTicker, notepad:initNotepad, bingSearch:initBingSearch, liveChat:initChat, profileEdit:initProfile };
   const allInits = Object.assign({}, p2inits, p3inits, {
     monthly: function(){
-    /* প্রতিবার "মাসিক হিসাব" পেজে ঢোকার সময় সিলেক্ট দুটো বর্তমান (রানিং) মাস/বছরে রিসেট হবে —
-       monthSelect-এ কোনো option-এ "selected" না থাকায় আগে ডিফল্ট সবসময় জানুয়ারি হয়ে যেত। */
+    /* প্রতিবার "মাসিক হিসাব" পেজে ঢোকার সময় সিলেক্ট দুটো বর্তমান (রানিং) মাস/বছরে রিসেট হবে */
     var _now = new Date();
+    var _curMonth = _now.getMonth() + 1;   // 1–12
+    var _curYear  = _now.getFullYear();    // যেমন 2026
+
     var _ms = document.getElementById('monthSelect');
     var _ys = document.getElementById('yearSelect');
+
+    /* yearSelect-এ চলতি বছর না থাকলে option যোগ করো */
+    if (_ys) {
+      var _hasYear = Array.from(_ys.options).some(function(o){ return parseInt(o.value) === _curYear; });
+      if (!_hasYear) {
+        var _opt = document.createElement('option');
+        _opt.value = String(_curYear);
+        _opt.textContent = String(_curYear);
+        _ys.appendChild(_opt);
+      }
+    }
+
+    /* user নিজে কিছু change না করলে সবসময় রানিং মাস/বছর সেট করো */
     window._monthlyUserChanged = false;
-    if (_ms) _ms.value = String(_now.getMonth()+1);
-    if (_ys) _ys.value = String(_now.getFullYear());
+    if (_ms) _ms.value = String(_curMonth);
+    if (_ys) _ys.value = String(_curYear);
+
     if(typeof renderMonthly==='function') renderMonthly();
     if (typeof _startAdminsFbSync === 'function') _startAdminsFbSync();
     if (typeof _startMonthlyFbSync === 'function') _startMonthlyFbSync();
@@ -31071,11 +31255,11 @@ window.renderRecentActivity = renderRecentActivity;
 function renderAdminTable(filter='') {
   const tb = document.getElementById('adminTableBody');
   if (!tb) return;
-  const list = filter ? state.admins.filter(a=>a.name.includes(filter)||a.code.includes(filter)||a.area.includes(filter)) : state.admins;
+  const list = filter ? state.admins.filter(a=>(a.name||'').includes(filter)||(a.code||'').includes(filter)||(a.area||'').includes(filter)) : state.admins;
   tb.innerHTML = list.map((a,i) => `
     <tr>
       <td style="color:var(--gray);font-size:12px;">${i+1}</td>
-      <td><strong style="cursor:pointer;color:var(--primary);text-decoration:underline;text-underline-offset:3px;" onclick="openAdminChatModal(${a.id})" title="চ্যাট করুন">${escHtml(a.name)}</strong></td>
+      <td><strong style="cursor:pointer;color:var(--primary);text-decoration:underline;text-underline-offset:3px;" onclick="openAdminChatModal('${a.id}')" title="চ্যাট করুন">${escHtml(a.name)}</strong></td>
       <td><span class="code-badge">${escHtml(a.code)}</span></td>
       <td style="font-size:13px;">${escHtml(a.phone)}</td>
       <td>${escHtml(a.area)}</td>
@@ -31089,13 +31273,13 @@ function renderAdminTable(filter='') {
       <td><span class="badge ${a.status==='active'?'badge-active':'badge-inactive'}">${a.status==='active'?'সক্রিয়':'নিষ্ক্রিয়'}</span></td>
       <td>
         <div style="display:flex;gap:6px;">
-          <button class="btn btn-ghost btn-sm" onclick="viewAdminProfile(${a.id})" title="প্রোফাইল দেখুন" style="color:#0A2463;">
+          <button class="btn btn-ghost btn-sm" onclick="viewAdminProfile('${a.id}')" title="প্রোফাইল দেখুন" style="color:#0A2463;">
             <i class="fas fa-address-card"></i>
           </button>
-          <button class="btn btn-ghost btn-sm" onclick="toggleAdminStatus(${a.id})" title="${a.status==='active'?'নিষ্ক্রিয় করুন':'সক্রিয় করুন'}">
+          <button class="btn btn-ghost btn-sm" onclick="toggleAdminStatus('${a.id}')" title="${a.status==='active'?'নিষ্ক্রিয় করুন':'সক্রিয় করুন'}">
             <i class="fas ${a.status==='active'?'fa-user-slash':'fa-user-check'}"></i>
           </button>
-          <button class="btn btn-danger btn-sm" onclick="removeAdmin(${a.id})">
+          <button class="btn btn-danger btn-sm" onclick="removeAdmin('${a.id}')">
             <i class="fas fa-trash"></i>
           </button>
         </div>
@@ -31277,29 +31461,42 @@ document.addEventListener('click', function(e) {
 });
 
 function toggleAdminStatus(id) {
-  const a = state.admins.find(x=>x.id===id);
+  const a = state.admins.find(x=>String(x.id)===String(id));
   if(a){ a.status = a.status==='active'?'inactive':'active'; renderAdminTable(); updateStats(); lsSave(); toast(a.name+' — অবস্থা পরিবর্তন হয়েছে','info'); }
 }
 
+var _deletedAdminIds = [];
+var _deletedComplaintIds = [];
+
 function removeAdmin(id) {
+  id = String(id);
   if (window.currentAdminRole !== 'super-admin') { showToast('অনুমতি নেই', 'এই কাজ শুধুমাত্র Super Admin করতে পারবেন।', 'error'); return; }
   if(!confirm('এই এডমিনকে সরিয়ে দিতে চান?')) return;
 
-  const admin = state.admins.find(a => a.id === id);
+  const admin = state.admins.find(a => String(a.id) === String(id));
 
-  state.admins = state.admins.filter(a=>a.id!==id);
+  // deleted list-এ রাখো — listener যাতে আবার ফিরিয়ে না আনে
+  if (!_deletedAdminIds.includes(id)) _deletedAdminIds.push(id);
 
-  // ADMIN_CREDENTIALS থেকেও সরিয়ে দাও, যাতে আর লগইন করতে না পারে
+  state.admins = state.admins.filter(a=>String(a.id)!==String(id));
+
+  // ADMIN_CREDENTIALS থেকেও সরিয়ে দাও
   if (admin) {
     ADMIN_CREDENTIALS = ADMIN_CREDENTIALS.filter(function(c) {
       return String(c.id) !== String(admin.id);
     });
   }
 
+  // p3state.chatContacts থেকেও সরাও
+  if (typeof p3state !== 'undefined' && p3state.chatContacts) {
+    p3state.chatContacts = p3state.chatContacts.filter(function(c){ return String(c.id) !== id; });
+    if (typeof renderChatContacts === 'function') renderChatContacts();
+  }
+
   renderAdminTable(); updateStats(); renderTracker();
   lsSave();
 
-  // Firestore থেকেও মুছে দাও — অন্যথায় রিলোডে আবার ফিরে আসবে
+  // Firestore থেকেও মুছে দাও
   try {
     if (typeof window.fbDeleteAdmin === 'function') {
       window.fbDeleteAdmin(id).then(function(ok) {
@@ -31319,45 +31516,128 @@ function openAddAdmin() {
   document.getElementById('newAdminCode').value = '';
   const box = document.getElementById('adminLoginCodeBox');
   if (box) box.style.display = 'none';
-  // TnC custom reset
-  const ed = document.getElementById('tncCustomEditor');
-  if (ed) ed.style.display = 'none';
-  const lbl = document.getElementById('tncCustomToggleLabel');
-  if (lbl) lbl.textContent = 'সম্পাদনা করুন';
-  const commRate = document.getElementById('tncCommRate');
-  const maxJobs  = document.getElementById('tncMaxJobs');
-  const extra    = document.getElementById('tncExtraNote');
-  if (commRate) commRate.value = '';
-  if (maxJobs)  maxJobs.value  = '';
-  if (extra)    extra.value    = '';
-  _tncUpdatePreview();
+  // TnC — ডিফল্ট শর্তগুলো লোড করো
+  _tncConditions = _TNC_DEFAULTS.map(function(c){ return Object.assign({}, c); });
+  _tncEditIdx = -1;
+  tncCondCancel();
+  _tncRenderConditions();
   openModal('addAdminModal');
 }
 
-function tncCustomToggle() {
-  const ed  = document.getElementById('tncCustomEditor');
-  const lbl = document.getElementById('tncCustomToggleLabel');
-  if (!ed) return;
-  const open = ed.style.display === 'block';
-  ed.style.display  = open ? 'none' : 'block';
-  lbl.textContent   = open ? 'সম্পাদনা করুন' : 'বন্ধ করুন';
-  if (!open) {
-    // real-time preview update
-    ['tncCommRate','tncMaxJobs','tncExtraNote'].forEach(function(id) {
-      const el = document.getElementById(id);
-      if (el) el.addEventListener('input', _tncUpdatePreview);
-    });
+/* ── শর্তাবলী CRUD (ডিফল্ট + কাস্টম) ── */
+var _tncConditions = [];
+var _tncEditIdx = -1;
+
+var _TNC_DEFAULTS = [
+  { type:'normal', title:'ক্লায়েন্ট ডেটা সুরক্ষা', text:'NID, জন্ম নিবন্ধন, ছবি, সার্টিফিকেট বা যেকোনো ব্যক্তিগত ফাইল সম্পূর্ণ গোপন রাখতে হবে। কাজ শেষে কোনো ফাইল নিজের ডিভাইসে সংরক্ষণ করা যাবে না।' },
+  { type:'warn',   title:'তৃতীয় পক্ষকে তথ্য প্রদান নিষিদ্ধ', text:'কোনো ক্লায়েন্টের তথ্য তৃতীয় কারো সাথে শেয়ার করলে কোনো নোটিশ ছাড়াই অ্যাকাউন্ট স্থায়ীভাবে ব্লক হবে।' },
+  { type:'normal', title:'যোগাযোগের সীমা', text:'ক্লায়েন্টের সাথে শুধুমাত্র ওয়েবসাইটের চ্যাটবক্সে কথা বলা যাবে। Facebook, WhatsApp, Email বা সরাসরি ফোনে যোগাযোগ সম্পূর্ণ নিষিদ্ধ।' },
+  { type:'warn',   title:'ব্যক্তিগত তথ্য শেয়ার নিষিদ্ধ', text:'নিজের মোবাইল নম্বর, বিকাশ/নগদ অ্যাকাউন্ট বা সোশ্যাল মিডিয়া লিঙ্ক ইনবক্সে শেয়ার করলে আইডি স্বয়ংক্রিয়ভাবে ব্লক হয়ে যাবে।' },
+  { type:'normal', title:'অফিসিয়াল পেমেন্ট গেটওয়ে', text:'ক্লায়েন্টের কাছ থেকে সরাসরি নিজের বিকাশ/নগদ নম্বরে টাকা নেওয়া যাবে না। সব বিল কোম্পানির সিস্টেম কোটেশনের মাধ্যমে কালেকশন করতে হবে।' },
+  { type:'normal', title:'সঠিক চার্জ', text:'সার্ভিস চার্জের সাথে প্রতি হাজারে ১৫ টাকা বিকাশ চার্জ যুক্ত করে কোটেশন পাঠাতে হবে। কোনো হিডেন চার্জ বা বকশিস দাবি করা যাবে না।' },
+  { type:'normal', title:'পে-আউট পলিসি', text:'অর্জিত আয়ের ৬৫% এডমিন পাবেন। ভুলের কারণে রিফান্ড হলে সেই টাকা এডমিনের ব্যালেন্স থেকে কাটা যাবে।' },
+  { type:'normal', title:'নির্ধারিত সময়ে ডেলিভারি', text:'কাজ এক্সেপ্ট করার পর নির্ধারিত সময়ের মধ্যে নিখুঁতভাবে আবেদন সম্পন্ন করে ডেলিভারি ফাইল সাবমিট করতে হবে।' },
+  { type:'warn',   title:'ভুল আবেদনের দায়ভার', text:'এডমিনের ভুলে আবেদন বাতিল বা রিজেক্ট হলে সম্পূর্ণ দায়ভার এডমিনকে নিতে হবে এবং প্রয়োজনে আবেদন ফি এডমিনকে বহন করতে হবে।' },
+  { type:'normal', title:'কাজ এক্সেপ্টেন্স লিমিট', text:'একসাথে সর্বোচ্চ ৩টি কাজ "Active" রাখা যাবে।' },
+  { type:'normal', title:'ডিভাইস বাইন্ডিং', text:'অনুমোদিত কোড ও ডিভাইস ছাড়া অন্য ডিভাইস থেকে লগইন করা যাবে না। একজন এডমিন একটি ফোন ও একটি কম্পিউটার ব্যবহার করতে পারবেন।' },
+  { type:'warn',   title:'অ্যাকাউন্ট শেয়ারিং নিষিদ্ধ', text:'নিজের এডমিন আইডি বা OTP/কোড অন্য কাউকে ব্যবহার করতে দেওয়া যাবে না।' }
+];
+
+function tncCondTypeChange() { /* no-op in new version */ }
+
+function tncAddCondition() {
+  _tncEditIdx = -1;
+  var lbl = document.getElementById('tncCondInputLabel');
+  if (lbl) lbl.innerHTML = '<i class="fas fa-plus" style="margin-right:5px;color:#C9A227;"></i>নতুন শর্ত যোগ করুন';
+  var tp  = document.getElementById('tncCondType');
+  var ttl = document.getElementById('tncCondTitle');
+  var txt = document.getElementById('tncCondTextVal');
+  if (tp)  tp.value  = 'normal';
+  if (ttl) ttl.value = '';
+  if (txt) txt.value = '';
+  var box = document.getElementById('tncConditionInputBox');
+  if (box) { box.style.display = 'block'; box.scrollIntoView({ behavior:'smooth', block:'nearest' }); }
+}
+
+function tncEditCondition(idx) {
+  _tncEditIdx = idx;
+  var cond = _tncConditions[idx];
+  if (!cond) return;
+  var lbl = document.getElementById('tncCondInputLabel');
+  if (lbl) lbl.innerHTML = '<i class="fas fa-pen" style="margin-right:5px;color:#C9A227;"></i>শর্ত সম্পাদনা করুন';
+  var tp  = document.getElementById('tncCondType');
+  var ttl = document.getElementById('tncCondTitle');
+  var txt = document.getElementById('tncCondTextVal');
+  if (tp)  tp.value  = cond.type  || 'normal';
+  if (ttl) ttl.value = cond.title || '';
+  if (txt) txt.value = cond.text  || '';
+  var box = document.getElementById('tncConditionInputBox');
+  if (box) { box.style.display = 'block'; box.scrollIntoView({ behavior:'smooth', block:'nearest' }); }
+}
+
+function tncDeleteCondition(idx) {
+  if (!confirm('এই শর্তটি মুছে ফেলবেন?')) return;
+  _tncConditions.splice(idx, 1);
+  _tncRenderConditions();
+}
+
+function tncCondSave() {
+  var tp  = (document.getElementById('tncCondType')    || {}).value || 'normal';
+  var ttl = ((document.getElementById('tncCondTitle')  || {}).value || '').trim();
+  var txt = ((document.getElementById('tncCondTextVal')|| {}).value || '').trim();
+  if (!ttl) { toast('শিরোনাম লিখুন', 'error'); return; }
+  if (!txt) { toast('শর্তের বিবরণ লিখুন', 'error'); return; }
+  var cond = { type: tp, title: ttl, text: txt };
+  if (_tncEditIdx >= 0 && _tncEditIdx < _tncConditions.length) {
+    _tncConditions[_tncEditIdx] = cond;
+  } else {
+    _tncConditions.push(cond);
+  }
+  _tncEditIdx = -1;
+  _tncSyncLegacy();
+  _tncRenderConditions();
+  tncCondCancel();
+}
+
+function tncCondCancel() {
+  var box = document.getElementById('tncConditionInputBox');
+  if (box) box.style.display = 'none';
+  _tncEditIdx = -1;
+}
+
+function _tncSyncLegacy() {
+  var extras = _tncConditions.map(function(c){ return c.title + ': ' + c.text; }).join('\n');
+  var en = document.getElementById('tncExtraNote');
+  if (en) en.value = extras;
+}
+
+function _tncRenderConditions() {
+  var list = document.getElementById('tncConditionsList');
+  if (!list) return;
+  list.innerHTML = '';
+  _tncConditions.forEach(function(c, i) {
+    var isWarn = c.type === 'warn';
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:flex-start;gap:8px;border-radius:8px;padding:9px 11px;border:1px solid '
+      + (isWarn ? 'rgba(220,53,69,0.15)' : 'rgba(10,36,99,0.12)') + ';background:'
+      + (isWarn ? 'rgba(220,53,69,0.04)' : 'rgba(10,36,99,0.03)') + ';';
+    row.innerHTML = '<div style="flex:1;min-width:0;">'
+      + '<div style="font-size:12px;font-weight:700;color:' + (isWarn ? '#C0392B' : '#0A2463') + ';margin-bottom:2px;">'
+      + '<i class="fas ' + (isWarn ? 'fa-triangle-exclamation' : 'fa-circle-dot') + '" style="margin-right:5px;font-size:10px;"></i>' + c.title + '</div>'
+      + '<div style="font-size:11.5px;color:#555;line-height:1.5;">' + c.text + '</div></div>'
+      + '<div style="display:flex;gap:5px;flex-shrink:0;margin-top:2px;">'
+      + '<button onclick="tncEditCondition(' + i + ')" style="background:rgba(10,36,99,0.08);border:none;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:11px;color:#0A2463;" title="সম্পাদনা"><i class="fas fa-pen"></i></button>'
+      + '<button onclick="tncDeleteCondition(' + i + ')" style="background:rgba(192,57,43,0.08);border:none;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:11px;color:#C0392B;" title="মুছুন"><i class="fas fa-trash"></i></button>'
+      + '</div>';
+    list.appendChild(row);
+  });
+  if (!_tncConditions.length) {
+    list.innerHTML = '<div style="font-size:12px;color:#aaa;padding:6px 2px;text-align:center;"><i class="fas fa-info-circle" style="margin-right:5px;"></i>কোনো শর্ত নেই</div>';
   }
 }
 
-function _tncUpdatePreview() {
-  const commVal = document.getElementById('tncCommRate')?.value || '';
-  const jobsVal = document.getElementById('tncMaxJobs')?.value  || '';
-  const pc = document.getElementById('tncPreviewComm');
-  const pj = document.getElementById('tncPreviewJobs');
-  if (pc) pc.textContent = (commVal || '65') + '%';
-  if (pj) pj.textContent = (jobsVal || '3') + 'টি';
-}
+function tncCustomToggle() { /* legacy compat — no-op */ }
+function _tncUpdatePreview() { _tncRenderConditions(); }
 
 function genCode() {
   // 6-character alphanumeric random code
@@ -31390,7 +31670,14 @@ async function addAdmin() {
   const phone = (document.getElementById('newAdminPhone').value || '').trim();
   const area  = (document.getElementById('newAdminArea').value || '').trim() || 'অজ্ঞাত';
   const uid   = (document.getElementById('newAdminUID').value || '').trim();
-  const comm  = parseInt(document.getElementById('newAdminComm').value) || 65;
+
+  // কমিশন — "পে-আউট পলিসি" শর্ত থেকে খোঁজো, না পেলে ডিফল্ট ৬৫
+  var commMatch = null;
+  (_tncConditions || []).forEach(function(c){
+    var m = (c.text || '').match(/(\d+)%/);
+    if (m && c.title && c.title.indexOf('পে-আউট') >= 0) commMatch = parseInt(m[1]);
+  });
+  const comm  = commMatch || 65;
 
   if (!name)  { toast('এডমিনের নাম দিন', 'error'); return; }
   if (!phone) { toast('ফোন নম্বর দিন', 'error'); return; }
@@ -31402,15 +31689,12 @@ async function addAdmin() {
     toast('এই UID দিয়ে ইতিমধ্যে একজন এডমিন আছেন।', 'error'); return;
   }
 
-  // কাস্টম TnC
-  const tncCommRate = parseInt((document.getElementById('tncCommRate') || {}).value) || comm;
-  const tncMaxJobs  = parseInt((document.getElementById('tncMaxJobs')  || {}).value) || 3;
-  const tncExtra    = ((document.getElementById('tncExtraNote') || {}).value || '').trim();
-  const customTnC   = {
-    commRate:  tncCommRate,
-    maxJobs:   tncMaxJobs,
-    extraNote: tncExtra || null,
-    createdAt: new Date().toISOString()
+  // কাস্টম TnC — সব conditions সেভ করো
+  const customTnC = {
+    commRate:   comm,
+    maxJobs:    3,
+    conditions: (_tncConditions || []).slice(),
+    createdAt:  new Date().toISOString()
   };
 
   const colors     = ['#1B3A8C','#2F6B4F','#7B2FBE','#C0392B','#C9A227','#2471A3','#1E8449'];
@@ -31422,7 +31706,7 @@ async function addAdmin() {
     name:       name,
     phone:      phone,
     area:       area,
-    comm:       tncCommRate,
+    comm:       comm,
     role:       'admin',
     status:     'active',
     online:     false,
@@ -31472,9 +31756,10 @@ async function addAdmin() {
   document.getElementById('newAdminPhone').value = '';
   document.getElementById('newAdminArea').value  = '';
   document.getElementById('newAdminUID').value   = '';
-  document.getElementById('newAdminComm').value  = '65';
-  var box = document.getElementById('adminLoginCodeBox');
-  if (box) box.style.display = 'none';
+  var box2 = document.getElementById('adminLoginCodeBox');
+  if (box2) box2.style.display = 'none';
+  _tncConditions = [];
+  _tncRenderConditions();
 
   if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-user-plus"></i> নিয়োগ দিন'; }
 
@@ -32241,7 +32526,12 @@ function renderMonthly() {
   const selYear  = parseInt(_ysEl?.value || _nowRM.getFullYear());
 
   function appMatchesMonth(ap) {
-    /* ১ম চেষ্টা: date string থেকে */
+    /* ১ম চেষ্টা: completedTs (ms) থেকে — লোকাল টাইমজোনে মাস/বছর নাও */
+    if (ap.completedTs) {
+      const dt = new Date(ap.completedTs);
+      return (dt.getMonth()+1) === selMonth && dt.getFullYear() === selYear;
+    }
+    /* ২য় চেষ্টা: date string থেকে (YYYY-MM-DD বা MM/DD/YYYY) */
     if (ap.date) {
       let m, y;
       if (ap.date.includes('-')) {
@@ -32252,11 +32542,6 @@ function renderMonthly() {
         m = parts[1]; y = parts[2];
       }
       if (!isNaN(m) && !isNaN(y)) return m === selMonth && y === selYear;
-    }
-    /* ২য় চেষ্টা: completedTs (timestamp ms) থেকে */
-    if (ap.completedTs) {
-      const dt = new Date(ap.completedTs);
-      return (dt.getMonth()+1) === selMonth && dt.getFullYear() === selYear;
     }
     return false;
   }
@@ -32293,7 +32578,7 @@ function renderMonthly() {
       <td style="color:var(--green);font-weight:700;">৳${admEarning.toLocaleString()}</td>
       <td style="color:var(--primary);font-weight:700;">৳${compEarning.toLocaleString()}</td>
       <td>
-        <button class="btn btn-ghost btn-sm" onclick="openAdminAppModal(${a.id})" title="বিস্তারিত প্রিন্ট ভিউ" style="color:var(--primary);border-color:rgba(10,36,99,0.25);">
+        <button class="btn btn-ghost btn-sm" onclick="openAdminAppModal('${a.id}')" title="বিস্তারিত প্রিন্ট ভিউ" style="color:var(--primary);border-color:rgba(10,36,99,0.25);">
           <i class="fas fa-print"></i> বিস্তারিত
         </button>
       </td>
@@ -32307,8 +32592,8 @@ function renderMonthly() {
 
 /* এডমিন বিস্তারিত মোডাল */
 function openAdminAppModal(adminId) {
-  const admin = state.admins.find(a => a.id === adminId);
-  if (!admin) return;
+  const admin = state.admins.find(a => String(a.id) === String(adminId));
+  if (!admin) { toast('এডমিন তথ্য লোড হয়নি, একটু অপেক্ষা করুন', 'error'); return; }
   _currentModalAdminId = adminId;
 
   const globalAdmPct = state.commission?.admin ?? 65;
@@ -33399,10 +33684,31 @@ function renderComplaints() {
       <td>${escHtml(c.subject)}</td>
       <td style="font-size:12.5px;color:var(--gray);">${c.date}</td>
       <td><span class="badge ${c.status==='pending'?'badge-pending':'badge-active'}">${c.status==='pending'?'অমীমাংসিত':'সমাধান হয়েছে'}</span></td>
-      <td><button class="btn btn-ghost btn-sm" onclick="viewComplaint('${c.id}')"><i class="fas fa-eye"></i> দেখুন</button></td>
+      <td>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-ghost btn-sm" onclick="viewComplaint('${c.id}')"><i class="fas fa-eye"></i> দেখুন</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteComplaint('${c.id}')" title="ডিলিট করুন"><i class="fas fa-trash"></i></button>
+        </div>
+      </td>
     </tr>`).join('');
   const compBadgeEl = document.getElementById('compBadge');
   if (compBadgeEl) compBadgeEl.textContent = state.complaints.filter(c=>c.status==='pending').length;
+}
+
+function deleteComplaint(id) {
+  if (!confirm('এই অভিযোগটি চিরতরে মুছে ফেলবেন?')) return;
+  const c = state.complaints.find(function(x){ return String(x.id) === String(id); });
+  if (c && c._fbId && !_deletedComplaintIds.includes(String(c._fbId))) {
+    _deletedComplaintIds.push(String(c._fbId));
+  }
+  state.complaints = state.complaints.filter(function(x){ return String(x.id) !== String(id); });
+  renderComplaints(); updateStats(); lsSave();
+  if (c && c._fbId && typeof window.fbDeleteComplaint === 'function') {
+    window.fbDeleteComplaint(c._fbId).then(function(ok){
+      if (!ok) toast('সতর্কতা: ক্লাউড থেকে মুছা যায়নি', 'error');
+    });
+  }
+  toast('অভিযোগ মুছে ফেলা হয়েছে', 'error');
 }
 
 /* অটো রিপ্লাই টেমপ্লেট */
@@ -33910,8 +34216,10 @@ function _admChatStartListener(id) {
       const _lt = last.text || '📎 ফাইল'; contact.lastMsg = _lt.slice(0, 30) + (_lt.length > 30 ? '...' : '');
       contact.lastTime = last.time;
       contact._lastActivity = Date.now();
-      if (last.from === 'admin' && state.currentChatAdmin != id) {
-        contact.unread = (contact.unread || 0) + 1;
+      if (state.currentChatAdmin != id) {
+        contact.unread = fbMsgs.filter(function(m) { return m.from === 'admin' && !m.readAt; }).length;
+      } else {
+        contact.unread = 0;
       }
       if (typeof renderChatContacts === 'function') renderChatContacts();
       if (typeof saUpdateMsgBadge === 'function') saUpdateMsgBadge();
@@ -35638,9 +35946,8 @@ function ntToggleChange(enabled) {
   _ntSyncToggleUI(document.getElementById('ntToggle'), enabled);
   var db = window._db;
   var mod = window._fbModules || {};
-  if (db && mod.doc && mod.setDoc && mod.serverTimestamp) {
-    mod.setDoc(mod.doc(db, 'settings', 'newsTicker'), {
-      items: _ntItems,
+  if (db && mod.doc && mod.updateDoc && mod.serverTimestamp) {
+    mod.updateDoc(mod.doc(db, 'settings', 'newsTicker'), {
       enabled: enabled,
       updatedAt: mod.serverTimestamp()
     }).then(function() {
@@ -35651,8 +35958,19 @@ function ntToggleChange(enabled) {
           enabled ? 'success' : 'info'
         );
     }).catch(function(e) {
-      console.error('ntToggleChange Firebase error:', e);
-      if (typeof showToast === 'function') showToast('ত্রুটি', 'Firebase আপডেট ব্যর্থ: ' + (e && e.code ? e.code : String(e)), 'error');
+      /* document না থাকলে setDoc দিয়ে তৈরি করো */
+      if (e && (e.code === 'not-found' || e.code === 'firestore/not-found') && mod.setDoc) {
+        mod.setDoc(mod.doc(db, 'settings', 'newsTicker'), {
+          items: _ntItems || [],
+          enabled: enabled,
+          updatedAt: mod.serverTimestamp()
+        }).catch(function(e2) {
+          console.error('ntToggleChange setDoc fallback error:', e2);
+        });
+      } else {
+        console.error('ntToggleChange Firebase error:', e);
+        if (typeof showToast === 'function') showToast('ত্রুটি', 'Firebase আপডেট ব্যর্থ: ' + (e && e.code ? e.code : String(e)), 'error');
+      }
     });
   }
 }
@@ -36087,8 +36405,8 @@ function initChat() {
   // rules অনুযায়ী admins কালেকশন শুধু লগইন করা admin পড়তে পারে, তাই Auth
   // রেডি হওয়ার পরই শুরু করা হয় — নাহলে রিলোডের পরপরই চ্যাট খুললে
   // permission-denied এরর আসতে পারে।
-  var contacts = (p3state.chatContacts || []);
-  if (contacts.length === 0 && typeof window.fbListenAdmins === 'function') {
+  if (typeof window.fbListenAdmins === 'function' && !window._chatAdminsListenerStarted) {
+    window._chatAdminsListenerStarted = true;
     var _attachChatAdminsListener = function() {
     window.fbListenAdmins(function(fsAdmins) {
       if (!fsAdmins || fsAdmins.length === 0) return;
@@ -36098,8 +36416,8 @@ function initChat() {
         var mid = isNaN(fa.id) ? fa.id : Number(fa.id);
         if (!p3state.chatContacts) p3state.chatContacts = [];
         var ci = p3state.chatContacts.findIndex(function(c){ return String(c.id) === String(mid); });
-        if (ci === -1) p3state.chatContacts.push({ id: mid, name: fa.name || fa.phone || 'এডমিন', code: fa.code || '', online: false, lastMsg: 'বার্তা পাঠান', lastTime: '', unread: 0, color: colors[p3state.chatContacts.length % colors.length] });
-        else { p3state.chatContacts[ci].name = fa.name || p3state.chatContacts[ci].name; }
+        if (ci === -1) p3state.chatContacts.push({ id: mid, name: fa.name || fa.phone || 'এডমিন', code: fa.code || '', photo: (fa.profileData && fa.profileData.avatarData) || '', online: false, lastMsg: 'বার্তা পাঠান', lastTime: '', unread: 0, color: colors[p3state.chatContacts.length % colors.length] });
+        else { p3state.chatContacts[ci].name = fa.name || p3state.chatContacts[ci].name; p3state.chatContacts[ci].code = fa.code || p3state.chatContacts[ci].code; if (fa.profileData && fa.profileData.avatarData) p3state.chatContacts[ci].photo = fa.profileData.avatarData; }
       });
       renderChatContacts();
       updateChatOnlineCount();
@@ -36774,8 +37092,171 @@ function profileChangeCover() {
   inp.click();
 }
 
+/* ── Avatar Crop Modal ── */
+function _buildCropModal() {
+  if (document.getElementById('_avatarCropModal')) return;
+  const modal = document.createElement('div');
+  modal.id = '_avatarCropModal';
+  modal.style.cssText = 'display:none;position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,0.82);align-items:center;justify-content:center;';
+  modal.innerHTML = `
+    <div style="background:#1a1a2e;border-radius:20px;padding:24px;width:min(360px,92vw);box-shadow:0 24px 64px rgba(0,0,0,0.6);display:flex;flex-direction:column;align-items:center;gap:16px;">
+      <div style="font-family:'Hind Siliguri',sans-serif;font-size:16px;font-weight:700;color:#fff;">ছবি সাজান</div>
+      <div style="position:relative;width:260px;height:260px;overflow:hidden;border-radius:10px;background:#000;cursor:grab;touch-action:none;" id="_cropCanvas">
+        <img id="_cropImg" style="position:absolute;transform-origin:0 0;user-select:none;-webkit-user-select:none;pointer-events:none;" draggable="false">
+        <!-- বৃত্ত overlay -->
+        <div style="position:absolute;inset:0;pointer-events:none;">
+          <svg width="260" height="260" style="position:absolute;inset:0;">
+            <defs><mask id="_cropMask"><rect width="260" height="260" fill="white"/><circle cx="130" cy="130" r="120" fill="black"/></mask></defs>
+            <rect width="260" height="260" fill="rgba(0,0,0,0.55)" mask="url(#_cropMask)"/>
+            <circle cx="130" cy="130" r="120" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="2"/>
+          </svg>
+        </div>
+      </div>
+      <!-- জুম স্লাইডার -->
+      <div style="width:260px;display:flex;align-items:center;gap:10px;">
+        <i class="fas fa-magnifying-glass-minus" style="color:#aaa;font-size:13px;"></i>
+        <input type="range" id="_cropZoom" min="0.5" max="3" step="0.01" value="1"
+          style="flex:1;accent-color:#C9A227;cursor:pointer;">
+        <i class="fas fa-magnifying-glass-plus" style="color:#aaa;font-size:13px;"></i>
+      </div>
+      <div style="display:flex;gap:10px;width:260px;">
+        <button onclick="_cropCancel()" style="flex:1;padding:10px;border-radius:10px;border:1.5px solid #444;background:transparent;color:#ccc;font-family:'Hind Siliguri',sans-serif;font-size:14px;font-weight:600;cursor:pointer;">বাতিল</button>
+        <button onclick="_cropConfirm()" style="flex:1;padding:10px;border-radius:10px;border:none;background:#C9A227;color:#0A2463;font-family:'Hind Siliguri',sans-serif;font-size:14px;font-weight:700;cursor:pointer;">✓ ঠিক আছে</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+var _cropState = { scale:1, x:0, y:0, dragging:false, lastX:0, lastY:0, imgW:0, imgH:0 };
+
+function _cropClamp() {
+  const s = _cropState;
+  const cw = 260, ch = 260;
+  const iw = s.imgW * s.scale, ih = s.imgH * s.scale;
+  s.x = Math.min(s.x, 0);
+  s.y = Math.min(s.y, 0);
+  s.x = Math.max(s.x, cw - iw);
+  s.y = Math.max(s.y, ch - ih);
+}
+
+function _cropApplyTransform() {
+  const img = document.getElementById('_cropImg');
+  if (img) img.style.transform = `translate(${_cropState.x}px,${_cropState.y}px) scale(${_cropState.scale})`;
+}
+
+function _cropSetZoom(val) {
+  const s = _cropState;
+  const cx = 130, cy = 130;
+  /* জুমের কেন্দ্র বৃত্তের মাঝে রাখো */
+  const imgCx = (cx - s.x) / s.scale;
+  const imgCy = (cy - s.y) / s.scale;
+  s.scale = parseFloat(val);
+  s.x = cx - imgCx * s.scale;
+  s.y = cy - imgCy * s.scale;
+  _cropClamp();
+  _cropApplyTransform();
+}
+
+var _cropCallback = null;
+function _openCropModal(src, callback) {
+  _cropCallback = callback || null;
+  _buildCropModal();
+  const modal = document.getElementById('_avatarCropModal');
+  const img   = document.getElementById('_cropImg');
+  const canvas = document.getElementById('_cropCanvas');
+  const zoom  = document.getElementById('_cropZoom');
+  modal.style.display = 'flex';
+  img.src = src;
+  img.onload = function() {
+    const cw = 260, ch = 260;
+    const ratio = Math.max(cw / img.naturalWidth, ch / img.naturalHeight);
+    _cropState.scale = ratio;
+    _cropState.imgW  = img.naturalWidth;
+    _cropState.imgH  = img.naturalHeight;
+    _cropState.x = (cw - img.naturalWidth  * ratio) / 2;
+    _cropState.y = (ch - img.naturalHeight * ratio) / 2;
+    zoom.min   = ratio.toFixed(3);
+    zoom.max   = (ratio * 4).toFixed(3);
+    zoom.value = ratio;
+    _cropClamp();
+    _cropApplyTransform();
+  };
+  /* mouse drag */
+  canvas.onmousedown = function(e) {
+    _cropState.dragging = true; _cropState.lastX = e.clientX; _cropState.lastY = e.clientY;
+    canvas.style.cursor = 'grabbing';
+  };
+  window._cropMouseMove = function(e) {
+    if (!_cropState.dragging) return;
+    _cropState.x += e.clientX - _cropState.lastX;
+    _cropState.y += e.clientY - _cropState.lastY;
+    _cropState.lastX = e.clientX; _cropState.lastY = e.clientY;
+    _cropClamp(); _cropApplyTransform();
+  };
+  window._cropMouseUp = function() { _cropState.dragging = false; canvas.style.cursor = 'grab'; };
+  document.addEventListener('mousemove', window._cropMouseMove);
+  document.addEventListener('mouseup',   window._cropMouseUp);
+  /* touch drag */
+  canvas.ontouchstart = function(e) {
+    if (e.touches.length === 1) {
+      _cropState.dragging = true;
+      _cropState.lastX = e.touches[0].clientX; _cropState.lastY = e.touches[0].clientY;
+    }
+  };
+  canvas.ontouchmove = function(e) {
+    e.preventDefault();
+    if (_cropState.dragging && e.touches.length === 1) {
+      _cropState.x += e.touches[0].clientX - _cropState.lastX;
+      _cropState.y += e.touches[0].clientY - _cropState.lastY;
+      _cropState.lastX = e.touches[0].clientX; _cropState.lastY = e.touches[0].clientY;
+      _cropClamp(); _cropApplyTransform();
+    }
+  };
+  canvas.ontouchend = function() { _cropState.dragging = false; };
+  zoom.oninput = function() { _cropSetZoom(this.value); };
+}
+
+function _cropCancel() {
+  const modal = document.getElementById('_avatarCropModal');
+  if (modal) modal.style.display = 'none';
+  document.removeEventListener('mousemove', window._cropMouseMove);
+  document.removeEventListener('mouseup',   window._cropMouseUp);
+}
+
+function _cropConfirm() {
+  const img = document.getElementById('_cropImg');
+  if (!img) return;
+  const SIZE = 240;
+  const cvs  = document.createElement('canvas');
+  cvs.width  = SIZE; cvs.height = SIZE;
+  const ctx  = cvs.getContext('2d');
+  /* বৃত্তে clip করো */
+  ctx.beginPath(); ctx.arc(SIZE/2, SIZE/2, SIZE/2, 0, Math.PI*2); ctx.clip();
+  const s = _cropState;
+  /* 260px canvas → 240px output অনুপাত */
+  const ratio = SIZE / 260;
+  ctx.drawImage(img, s.x * ratio, s.y * ratio, s.imgW * s.scale * ratio, s.imgH * s.scale * ratio);
+  const data = cvs.toDataURL('image/jpeg', 0.88);
+  _cropCancel();
+  /* callback থাকলে (এডমিন প্যানেল) — callback-এ croppedData দাও */
+  if (typeof _cropCallback === 'function') {
+    _cropCallback(data);
+    _cropCallback = null;
+    return;
+  }
+  /* সুপার অ্যাডমিন নিজের ছবি — state-এ সেভ ও সব জায়গায় apply */
+  state.profile.avatarData = data;
+  lsSave();
+  const imgTag = `<img src="${data}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+  _applyAvatarEverywhere(imgTag);
+  /* Firestore-এ সেভ */
+  if (typeof window.fbUpdateAdmin === 'function' && currentAdmin && currentAdmin.id) {
+    window.fbUpdateAdmin(currentAdmin.id, { 'profileData.avatarData': data });
+  }
+  p3Toast('প্রোফাইল ছবি সেট হয়েছে','success');
+}
+
 function profileChangeAvatar() {
-  /* hidden file input তৈরি করে click করো */
   let inp = document.getElementById('_avatarFileInput');
   if (!inp) {
     inp = document.createElement('input');
@@ -36785,19 +37266,9 @@ function profileChangeAvatar() {
     document.body.appendChild(inp);
     inp.addEventListener('change', function() {
       const f = this.files[0]; if (!f) return;
-      /* সাইজ চেক — ৩ MB সীমা */
-      if (f.size > 3 * 1024 * 1024) { p3Toast('ছবি ৩ MB-এর বেশি হওয়া যাবে না','error'); return; }
+      if (f.size > 5 * 1024 * 1024) { p3Toast('ছবি ৫ MB-এর বেশি হওয়া যাবে না','error'); return; }
       const r = new FileReader();
-      r.onload = e => {
-        const data = e.target.result;
-        const imgTag = `<img src="${data}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
-        /* state-এ সেভ */
-        state.profile.avatarData = data;
-        lsSave();
-        /* সব জায়গায় avatar update */
-        _applyAvatarEverywhere(imgTag);
-        p3Toast('প্রোফাইল ছবি পরিবর্তন হয়েছে','success');
-      };
+      r.onload = e => { _openCropModal(e.target.result); };
       r.readAsDataURL(f);
     });
   }
@@ -37132,6 +37603,7 @@ function pfApplyCrop() {
       state.profile.avatarData = data;
       lsSave();
       pfApplyAvatar(data, '', '');
+      pfSyncAvatarToFirestore(data);
     } else {
       state.profile = state.profile || {};
       state.profile.coverData = data;
@@ -37164,11 +37636,19 @@ function pfApplyAvatar(dataUrl, name, color) {
   }
 }
 
+/* ── অ্যাভাটার Firestore-এ সিঙ্ক করো — যাতে ক্লায়েন্ট/সুপার এডমিন সবাই দেখতে পায় ── */
+function pfSyncAvatarToFirestore(dataUrlOrNull) {
+  if (typeof currentAdmin === 'undefined' || !currentAdmin || !currentAdmin.id) return;
+  if (typeof window.fbUpdateAdmin !== 'function') return;
+  window.fbUpdateAdmin(currentAdmin.id, { 'profileData.avatarData': dataUrlOrNull || null });
+}
+
 function pfRemoveAvatar() {
   state.profile = state.profile || {};
   delete state.profile.avatarData;
   lsSave();
   pfApplyAvatar('', state.profile.name || 'K', state.profile.avatarColor || '');
+  pfSyncAvatarToFirestore(null);
   p3Toast('প্রোফাইল ছবি মুছে ফেলা হয়েছে', 'info');
 }
 
@@ -37592,6 +38072,29 @@ document.addEventListener('keydown', e => {
         window.currentAdminRole = sess.role || 'admin';
         if (typeof window.adminLoginSuccess === 'function') window.adminLoginSuccess(sess);
 
+        // ── UI রিস্টোর: adminModalOverlay খোলো এবং adminShell দেখাও ──
+        var overlay = document.getElementById('adminModalOverlay');
+        if (overlay) {
+          overlay.style.display = 'block';
+          document.body.style.overflow = 'hidden';
+          if (!history.state || !history.state.adminModalOpen) {
+            history.replaceState({ adminModalOpen: true, panel: 'dashboard' }, '');
+          }
+        }
+        var adminShell = document.getElementById('adminShell');
+        if (adminShell) adminShell.classList.add('show');
+        var loginScreen = document.getElementById('loginScreen');
+        if (loginScreen) loginScreen.style.display = 'none';
+
+        // sidebar নাম আপডেট
+        var spbName = document.getElementById('spbName');
+        if (spbName) spbName.textContent = sess.name || sess.email || '';
+        var sbName = document.getElementById('sidebarName');
+        if (sbName) sbName.textContent = sess.name || sess.email || '';
+
+        // minimize bubble visibility আপডেট
+        if (typeof qnUpdateBubbleVisibility === 'function') qnUpdateBubbleVisibility();
+
         function _startSessionFbListeners() {
           startNoticeboard(sess.id);
           startAppNotifListener(sess.id);
@@ -37702,7 +38205,28 @@ async function clientFileDownload(trackingId, fileDocId, fileName) {
       if (typeof renderCirculars === 'function') renderCirculars();
       return;
     }
-    /* ৪. Landing/Hero — সাধারণ পেজ: reload ছাড়া কিছু নেই */
+    /* ৪. Landing/Hero — admin/SA লগইন থাকলে তাদের প্যানেল রিওপেন করো, নাহলে reload */
+    // admin লগইন আছে কিনা চেক করো
+    var sess = null;
+    try { sess = JSON.parse(localStorage.getItem('adminSession') || '{}'); } catch(e2) {}
+    if (sess && sess.id) {
+      // admin লগইন আছে — overlay আবার খুলো
+      var aOr = document.getElementById('adminModalOverlay');
+      if (aOr) {
+        aOr.style.display = 'block';
+        document.body.style.overflow = 'hidden';
+        if (typeof switchPanel === 'function') switchPanel('dashboard', false);
+      }
+      return;
+    }
+    // SA লগইন আছে কিনা চেক করো
+    var saSess = null;
+    try { saSess = typeof _isSessionValid === 'function' && _isSessionValid(); } catch(e3) {}
+    if (saSess) {
+      var saW2 = document.getElementById('superAdminWrapper');
+      if (saW2 && saW2.style.display === 'none') saW2.style.display = 'block';
+      return;
+    }
     location.reload();
   }
 
