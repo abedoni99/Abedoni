@@ -95,6 +95,21 @@
     });
   };
 
+  // ── "viewerSide" (client/admin) যা মেসেজগুলো এখন দেখছে — অপর পক্ষের
+  // unread মেসেজগুলোতে readAt বসিয়ে দাও (হোয়াটসঅ্যাপ-স্টাইল ব্লু-টিক) ──
+  window.fbMarkMessagesRead = async function(trackingId, viewerSide, msgs) {
+    try {
+      const otherSide = viewerSide === 'client' ? 'admin' : 'client';
+      const targets = (msgs || []).filter(m => m.from === otherSide && !m.readAt && m.id);
+      if (!targets.length) return;
+      await Promise.all(targets.map(m =>
+        updateDoc(doc(db, "applications", trackingId, "messages", m.id), { readAt: serverTimestamp() }).catch(() => {})
+      ));
+    } catch(e) {
+      console.error("fbMarkMessagesRead error:", e);
+    }
+  };
+
   // ── এডমিন প্যানেলে সব আবেদন রিয়েলটাইম ──
   window.fbListenApplications = function(callback) {
     return onSnapshot(collection(db, "applications"), (snap) => {
@@ -154,6 +169,22 @@
     }
   };
 
+  // ── sa_chat: "viewerSide" (admin/super) যা এখন চ্যাট দেখছে — অপর পক্ষের
+  // unread মেসেজগুলোতে readAt বসিয়ে দাও (হোয়াটসঅ্যাপ-স্টাইল ব্লু-টিক) ──
+  window.fbMarkSAMessagesRead = async function(channelId, viewerSide, msgs) {
+    try {
+      const ch = channelId ? String(channelId) : 'channel';
+      const otherSide = viewerSide === 'super' ? 'admin' : 'super';
+      const targets = (msgs || []).filter(m => m.from === otherSide && !m.readAt && m.id);
+      if (!targets.length) return;
+      await Promise.all(targets.map(m =>
+        updateDoc(doc(db, "sa_chat", ch, "messages", m.id), { readAt: serverTimestamp() }).catch(() => {})
+      ));
+    } catch(e) {
+      console.error("fbMarkSAMessagesRead error:", e);
+    }
+  };
+
   // ── chunks পড়ে dataUrl পুনরুদ্ধার করো ──
   window.fbGetSAFileUrl = async function(ch, fileDocId) {
     try {
@@ -192,6 +223,7 @@
           text: data.text || '',
           time: data.time || '',
           ts: data.createdAt ? data.createdAt.toMillis() : 0,
+          readAt: data.readAt || null,
           file: file  // { name, size, type, isImg, url } — url = Firebase Storage link
         };
       });
@@ -553,6 +585,7 @@
           paymentConfirmed: data.paymentConfirmed || false,
           clientOnly: data.clientOnly || false,
           deleted: data.deleted || false,
+          readAt: data.readAt || null,
           createdAt: data.createdAt || null
         };
       });
@@ -629,13 +662,15 @@
   };
 
   // ── নোটিশ বোর্ডে নোটিশ সেভ করো (সুপার এডমিন ব্রডকাস্ট থেকে) ──
-  window.fbSaveNotice = async function(title, body, priority) {
+  // targetAdmins: খালি অ্যারে/undefined হলে সব এডমিন দেখবে; নির্দিষ্ট adminId-র অ্যারে দিলে শুধু তারাই দেখবে
+  window.fbSaveNotice = async function(title, body, priority, targetAdmins) {
     try {
       const ref = await addDoc(collection(db, "notices"), {
         title: title || 'নোটিশ',
         body:  body  || '',
         priority: priority || 'low',
         readBy: [],
+        targetAdmins: (Array.isArray(targetAdmins) && targetAdmins.length) ? targetAdmins.map(String) : null,
         createdAt: serverTimestamp()
       });
       return ref.id;
@@ -4923,7 +4958,8 @@
 #adminModalOverlay .msg-wrap.mine .msg-time {
   color: #667781;
 }
-#adminModalOverlay .msg-wrap.mine .msg-time .tick { color: #53BDEB; font-size: 13px; }
+#adminModalOverlay .msg-wrap.mine .msg-time .tick { color: #8696A0; font-size: 13px; }
+#adminModalOverlay .msg-wrap.mine .msg-time .tick.read { color: #53BDEB; }
 /* ════════════════════════════════════════
    ADMIN PANEL — chat-msg-row / chat-bubble
    (acmRenderMessages & saRenderMessages use these)
@@ -10206,10 +10242,13 @@
 .cp-msg.client .cp-msg-time {
   color: #667781;
 }
-/* Double tick (read receipt) */
+/* Double tick (read receipt) — ডিফল্ট ধূসর (পাঠানো হয়েছে), .read হলে নীল (পড়া হয়েছে) */
 .cp-msg.client .cp-msg-time .tick {
-  color: #53BDEB;
+  color: #8696A0;
   font-size: 13px;
+}
+.cp-msg.client .cp-msg-time .tick.read {
+  color: #53BDEB;
 }
 
 /* Image preview in bubble */
@@ -11279,7 +11318,8 @@
   display: flex !important; align-items: center !important; gap: 3px !important;
 }
 #adminModalOverlay .msg-wrap.mine .msg-time { color: var(--wa-meta) !important; }
-#adminModalOverlay .msg-wrap.mine .msg-time .tick { color: #53BDEB !important; font-size: 13px !important; }
+#adminModalOverlay .msg-wrap.mine .msg-time .tick { color: #8696A0 !important; font-size: 13px !important; }
+#adminModalOverlay .msg-wrap.mine .msg-time .tick.read { color: #53BDEB !important; }
 
 /* SA Contact special styling */
 #adminModalOverlay .sa-contact {
@@ -13079,13 +13119,17 @@ function cpSearchApp() {
           .filter(function(m) { return !m.deleted; })
           .filter(function(m) { return !cpHidden.includes(m.id); }) // only-me hide
           .map(function(m) {
-          return { id: m.id, from: m.from||"admin", text: m.text||null, isHtml: m.isHtml||false, time: m.timeStr||m.time||"এইমাত্র", file: m.file||null, paymentConfirmed: m.paymentConfirmed||false, adminOnly: m.adminOnly||false };
+          return { id: m.id, from: m.from||"admin", text: m.text||null, isHtml: m.isHtml||false, time: m.timeStr||m.time||"এইমাত্র", file: m.file||null, paymentConfirmed: m.paymentConfirmed||false, adminOnly: m.adminOnly||false, readAt: m.readAt||null };
         });
         if (cpCurrentApp) {
           const stillUploading = (cpCurrentApp.messages || []).filter(m => m._optId && m.file && m.file._uploading);
           cpCurrentApp.messages = [...mapped, ...stillUploading];
           cpRenderMessages(cpCurrentApp.messages);
           _cpScrollToBottom();
+          // ক্লায়েন্ট এই চ্যাট দেখছে — এডমিনের পাঠানো unread মেসেজ "পড়া" মার্ক করো
+          if (typeof window.fbMarkMessagesRead === 'function') {
+            window.fbMarkMessagesRead(docId, 'client', mapped);
+          }
         }
       }, function(err) {
         console.error('cpMessages onSnapshot error:', err);
@@ -13559,6 +13603,14 @@ function _cpScrollToBottom() {
   });
 }
 
+/* হোয়াটসঅ্যাপ-স্টাইল ডবল-টিক HTML — শুধু নিজের পাঠানো মেসেজে দেখানো হয়।
+   readAt থাকলে নীল (পড়া হয়েছে), না থাকলে ধূসর (পাঠানো হয়েছে, এখনো পড়া হয়নি) */
+function cpTickHtml(m) {
+  return m.readAt
+    ? ' <i class="fas fa-check-double tick read"></i>'
+    : ' <i class="fas fa-check-double tick"></i>';
+}
+
 function cpRenderMessages(msgs) {
   const container = document.getElementById('cpMessages');
 
@@ -13578,7 +13630,7 @@ function cpRenderMessages(msgs) {
       div.className = 'cp-msg ' + m.from;
       const _txt = m.text || '';
       const _safe = _txt.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      div.innerHTML = `<div class="cp-msg-bubble">${_safe}</div><span class="cp-msg-time">${m.time||''}</span>`;
+      div.innerHTML = `<div class="cp-msg-bubble">${_safe}</div><span class="cp-msg-time">${m.time||''}${m.from === 'client' ? cpTickHtml(m) : ''}</span>`;
       row.appendChild(div);
       container.appendChild(row);
     });
@@ -13633,7 +13685,7 @@ function cpRenderMessages(msgs) {
             <div class="cp-msg-file-name">${escHtml(m.file.name)}</div>
             <div class="cp-msg-file-size" style="color:#e53e3e;">পাঠানো ব্যর্থ হয়েছে। আবার চেষ্টা করুন।</div>
           </div>
-        </div><span class="cp-msg-time">${m.time}</span>`;
+        </div><span class="cp-msg-time">${m.time}${m.from === 'client' ? cpTickHtml(m) : ''}</span>`;
       } else if (isUploading) {
         // Upload চলছে — progress bar দেখাও
         div.innerHTML = `<div class="cp-msg-file" style="flex-wrap:wrap;gap:8px;">
@@ -13645,7 +13697,7 @@ function cpRenderMessages(msgs) {
             </div>
             <div class="cp-upload-pct" style="font-size:11px;color:var(--gray);margin-top:3px;">আপলোড হচ্ছে... ${pct}%</div>
           </div>
-        </div><span class="cp-msg-time">${m.time}</span>`;
+        </div><span class="cp-msg-time">${m.time}${m.from === 'client' ? cpTickHtml(m) : ''}</span>`;
       } else if (m.file.fileDocId) {
         // সফল — ক্লিকযোগ্য ফাইল বাবল
         div.innerHTML = `<div id="cfd_${m.file.fileDocId}" class="cp-msg-file" onclick="clientFileDownload('${_tid}','${m.file.fileDocId}','${(m.file.name||'').replace(/['"]/g,'')}')" style="flex-wrap:wrap;gap:8px;cursor:pointer;">
@@ -13654,10 +13706,10 @@ function cpRenderMessages(msgs) {
             <div class="cp-msg-file-name">${escHtml(m.file.name)}</div>
             <div class="cp-msg-file-size">${_fSize}</div>
           </div>
-        </div><span class="cp-msg-time">${m.time}</span>`;
+        </div><span class="cp-msg-time">${m.time}${m.from === 'client' ? cpTickHtml(m) : ''}</span>`;
       } else {
         // fileDocId নেই (পুরনো format)
-        div.innerHTML = `<div class="cp-msg-file">${getFileIconHtml(m.file)}<div><div class="cp-msg-file-name">${escHtml(m.file.name)||'ফাইল'}</div><div class="cp-msg-file-size">${_fSize}</div></div></div><span class="cp-msg-time">${m.time}</span>`;
+        div.innerHTML = `<div class="cp-msg-file">${getFileIconHtml(m.file)}<div><div class="cp-msg-file-name">${escHtml(m.file.name)||'ফাইল'}</div><div class="cp-msg-file-size">${_fSize}</div></div></div><span class="cp-msg-time">${m.time}${m.from === 'client' ? cpTickHtml(m) : ''}</span>`;
       }
     } else {
       const txt = m.text || '';
@@ -13668,7 +13720,7 @@ function cpRenderMessages(msgs) {
       const optStyle = m._optId ? 'opacity:0.75;' : '';
       // HTML কার্ডের জন্য আলাদা class — pre-wrap বন্ধ ও padding/background সরানো
       const bubbleClass = isHtmlCard ? 'cp-msg-bubble cp-html-card' : 'cp-msg-bubble';
-      div.innerHTML = `<div class="${bubbleClass}" style="${optStyle}">${safe}</div><span class="cp-msg-time">${m.time||''}</span>`;
+      div.innerHTML = `<div class="${bubbleClass}" style="${optStyle}">${safe}</div><span class="cp-msg-time">${m.time||''}${m.from === 'client' ? cpTickHtml(m) : ''}</span>`;
     }
     if (_cpSelectMode && _cpSelected.has(m.id)) {
       const dot = document.createElement('div');
@@ -17847,7 +17899,7 @@ renderAll();
             </select>
           </div>
           <div>
-            <label style="display:block;font-size:12px;font-weight:600;color:#555;margin-bottom:5px;">মেয়াদ শেষের তারিখ</label>
+            <label style="display:block;font-size:12px;font-weight:600;color:#555;margin-bottom:5px;">মেয়াদ শেষের তারিখ <span style="color:#e53e3e;">*</span></label>
             <input type="date" id="adminCircExpiry" style="width:100%;padding:10px 14px;border:1.5px solid #e0e0e0;border-radius:10px;font-size:13px;font-family:inherit;box-sizing:border-box;outline:none;">
           </div>
         </div>
@@ -20100,6 +20152,10 @@ function startClientMessageListener(appId) {
     }
     if (_activeChatAppId !== appId) return;
     renderClientMessages(visible);
+    // এডমিন এই চ্যাট দেখছে — ক্লায়েন্টের পাঠানো unread মেসেজ "পড়া" মার্ক করো
+    if (typeof window.fbMarkMessagesRead === 'function') {
+      window.fbMarkMessagesRead(appId, 'admin', visible);
+    }
   });
 }
 
@@ -20318,7 +20374,7 @@ function renderClientMessages(msgs) {
       ${!mine ? `<div class="msg-avatar">${avatar}</div>` : ''}
       <div class="msg-group">
         ${bodyHtml}
-        <div class="msg-time">${m.time||''} ${mine ? '<i class="fas fa-check-double" style="font-size:9px;color:#C9A227;margin-left:2px;"></i>' : ''}</div>
+        <div class="msg-time">${m.time||''} ${mine ? (m.readAt ? '<i class="fas fa-check-double" style="font-size:9px;color:#53BDEB;margin-left:2px;"></i>' : '<i class="fas fa-check-double" style="font-size:9px;color:#8696A0;margin-left:2px;"></i>') : ''}</div>
       </div>
     </div>`;
   }).join('');
@@ -20502,6 +20558,9 @@ function _saStartListener() {
     const saWin = document.getElementById('saChatSection');
     if (saWin && saWin.classList.contains('sa-open')) {
       saRenderMessages();
+      if (typeof window.fbMarkSAMessagesRead === 'function') {
+        window.fbMarkSAMessagesRead(ch, 'admin', _saMsgsCache);
+      }
     } else {
       const newMsgs = _saMsgsCache.filter(m => m.from === 'super' && (m.ts || 0) > saLastSeen);
       if (newMsgs.length > 0) {
@@ -20751,9 +20810,10 @@ function saRenderMessages() {
     }
     const lp = `onmousedown="saLongPressStart('${m.id}')" onmouseup="saLongPressEnd()" onmouseleave="saLongPressEnd()" ontouchstart="saLongPressStart('${m.id}')" ontouchend="saLongPressEnd()"`;
     if (isMine) {
+      const _tickCls = m.readAt ? 'tick read' : 'tick';
       const _mineBody = m.file
-        ? `${_bubbleContent}<span class="msg-time" style="display:block;text-align:right;margin-top:2px;">${m.time} <i class="fas fa-check-double tick read"></i></span>`
-        : `<div class="msg-bubble">${_bubbleContent}<span class="msg-time">${m.time} <i class="fas fa-check-double tick read"></i></span></div>`;
+        ? `${_bubbleContent}<span class="msg-time" style="display:block;text-align:right;margin-top:2px;">${m.time} <i class="fas fa-check-double ${_tickCls}"></i></span>`
+        : `<div class="msg-bubble">${_bubbleContent}<span class="msg-time">${m.time} <i class="fas fa-check-double ${_tickCls}"></i></span></div>`;
       html += `<div class="msg-wrap mine" data-msgid="${m.id}" style="${selStyle}${selBg}" ${lp}>
         ${dot}
         <div class="msg-group">${_mineBody}</div>
@@ -21168,7 +21228,7 @@ function sendQuotationFromModal() {
             ${noteVal ? `<div style="margin-top:6px;font-size:12px;color:var(--text-mid);background:var(--off-white);padding:6px 8px;border-radius:6px;">${noteVal}</div>` : ''}
           </div>
         </div>
-        <div class="msg-time">${currentTime()} <i class="fas fa-check-double" style="font-size:9px;color:var(--accent);margin-left:3px;"></i></div>
+        <div class="msg-time">${currentTime()} <i class="fas fa-check-double" style="font-size:9px;color:#8696A0;margin-left:3px;"></i></div>
       </div>`;
     msgs.appendChild(wrap);
     msgs.scrollTop = msgs.scrollHeight;
@@ -21599,7 +21659,7 @@ function sendPaymentQuotationToClient() {
             ${note ? `<div style="margin-top:8px;font-size:12px;color:var(--text-mid);background:var(--off-white);padding:6px 8px;border-radius:6px;">${note}</div>` : ''}
           </div>
         </div>
-        <div class="msg-time">${currentTime()} <i class="fas fa-check-double" style="font-size:9px;color:var(--accent);margin-left:3px;"></i></div>
+        <div class="msg-time">${currentTime()} <i class="fas fa-check-double" style="font-size:9px;color:#8696A0;margin-left:3px;"></i></div>
       </div>`;
     msgs.appendChild(wrap);
     msgs.scrollTop = msgs.scrollHeight;
@@ -21738,7 +21798,7 @@ function sendDeliveryForm() {
             </div>
           </div>
         </div>
-        <div class="msg-time">${currentTime()} <i class="fas fa-check-double" style="font-size:9px;color:var(--accent);margin-left:3px;"></i></div>
+        <div class="msg-time">${currentTime()} <i class="fas fa-check-double" style="font-size:9px;color:#8696A0;margin-left:3px;"></i></div>
       </div>`;
     msgs.appendChild(wrap);
     msgs.scrollTop = msgs.scrollHeight;
@@ -22070,7 +22130,7 @@ function sendQuotation() {
             ${noteVal ? `<div style="margin-top:6px;font-size:12px;color:var(--text-mid);background:var(--off-white);padding:6px 8px;border-radius:6px;">${noteVal}</div>` : ''}
           </div>
         </div>
-        <div class="msg-time">${currentTime()} <i class="fas fa-check-double" style="font-size:9px;color:var(--accent);margin-left:3px;"></i></div>
+        <div class="msg-time">${currentTime()} <i class="fas fa-check-double" style="font-size:9px;color:#8696A0;margin-left:3px;"></i></div>
       </div>`;
     msgs.appendChild(wrap);
     msgs.scrollTop = msgs.scrollHeight;
@@ -23246,6 +23306,16 @@ window.addEventListener('popstate', function(e) {
   // panel state → উপরের switchPanel listener সামলাবে
   if (e.state && e.state.panel) return;
 
+  // ── মিনিমাইজ করা হলে লগআউট করো না ──
+  if (window._adminMinimized) {
+    window._adminMinimized = false;
+    return;
+  }
+  if (window._saMinimized) {
+    window._saMinimized = false;
+    return;
+  }
+
   // ── এডমিন লগইন মোডাল বা এডমিন প্যানেল খোলা থাকলে বন্ধ করো ──
   var adminOverlay = document.getElementById('adminModalOverlay');
   if (adminOverlay && adminOverlay.style.display === 'block') {
@@ -23273,11 +23343,15 @@ window.addEventListener('popstate', function(e) {
    ADMIN — MINIMIZE & LOGOUT (top-bar)
 ================================================================ */
 function adminMinimizePanel() {
+  window._adminMinimized = true;
   var overlay = document.getElementById('adminModalOverlay');
   if (overlay) overlay.style.display = 'none';
   document.body.style.overflow = '';
   var returnBtn = document.getElementById('returnToAdminBtn');
-  if (returnBtn) returnBtn.style.display = 'flex';
+  if (returnBtn) returnBtn.style.setProperty('display', 'flex', 'important');
+  if (history.state && history.state.adminModalOpen) {
+    history.back();
+  }
   var hero = document.getElementById('hero');
   if (hero) hero.scrollIntoView({ behavior: 'smooth' });
   else window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -23306,7 +23380,19 @@ function adminCircStartListen() {
   if (typeof window.fbListenCirculars === 'function') {
     _adminCircUnsub = window.fbListenCirculars(function(circs) {
       // _test:true সার্কুলার বাদ দাও
-      window._adminCirculars = (circs || []).filter(function(x){ return !x._test; });
+      const list = (circs || []).filter(function(x){ return !x._test; });
+      // ── মেয়াদ শেষ সার্কুলার Firebase থেকে অটো ও চিরতরে ডিলিট করো (Admin Panel) ──
+      const todayAdm = new Date(); todayAdm.setHours(0,0,0,0);
+      list.forEach(function(fc) {
+        const dl = fc.expiry || fc.deadline || null;
+        if (dl) {
+          const d = new Date(dl); d.setHours(0,0,0,0);
+          if (d < todayAdm && fc._fbId && typeof window.fbDeleteCircular === 'function') {
+            window.fbDeleteCircular(fc._fbId);
+          }
+        }
+      });
+      window._adminCirculars = list;
       adminRenderCirculars();
     });
   }
@@ -23488,6 +23574,7 @@ async function adminPublishCircular() {
   const editId   = document.getElementById('adminCircEditId').value;
 
   if (!title) { adminShowToast('শিরোনাম প্রয়োজন', 'error'); return; }
+  if (!expiry) { adminShowToast('মেয়াদ শেষের তারিখ আবশ্যক — তারিখ ছাড়া সার্কুলার প্রকাশ করা যাবে না', 'error'); return; }
 
   const btn = document.getElementById('adminCircSubmitBtn');
   if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> সংরক্ষণ হচ্ছে...'; }
@@ -28698,7 +28785,7 @@ function adminConfirmedLogout() {
           </select>
         </div>
         <div class="form-group">
-          <label>মেয়াদ শেষের তারিখ</label>
+          <label>মেয়াদ শেষের তারিখ <span style="color:#e53e3e;">*</span></label>
           <input type="date" class="form-control" id="circExpiry">
         </div>
       </div>
@@ -30206,6 +30293,7 @@ function _startAdminsFbSync() {
             if (typeof renderTracker === 'function') renderTracker();
             if (typeof renderChatContacts === 'function') renderChatContacts();
             if (typeof renderMonthly === 'function') renderMonthly(); /* কমিশন রেট সিঙ্কের পরে মাসিক হিসাব রিফ্রেশ */
+            if (typeof ltRenderAdminList === 'function') ltRenderAdminList(); /* ইনবক্স মনিটরের এডমিন লিস্টও সাথে সাথে রিফ্রেশ করো */
           } catch(e) { console.error('Admin sync render failed:', e); }
         });
       } else if (retries > 0) {
@@ -30359,6 +30447,18 @@ function saDoLogin() {
 
     /* সফল লগইন */
     loginAttempts = 0;
+    /* currentAdmin ও currentAdminRole সেট করো — এটা না করলে পরে সার্কুলার
+       এডিট/ডিলিটের permission চেক (window.currentAdminRole !== 'super-admin')
+       সবসময় ব্যর্থ হয়, কারণ এই ভ্যারিয়েবলগুলো আগে কোথাও সেট হতো না। */
+    currentAdmin = {
+      email,
+      name: adminData.name || email,
+      id: adminData.id,
+      comm: adminData.comm != null ? adminData.comm : null,
+      role: adminData.role || 'super-admin'
+    };
+    window.currentAdminRole = currentAdmin.role;
+    try { localStorage.setItem('adminSession', JSON.stringify(currentAdmin)); } catch(e) {}
     _createSession();
     document.getElementById('loginPage').style.animation = 'fadeOut 0.4s ease forwards';
     setTimeout(() => {
@@ -30753,6 +30853,9 @@ function goTo(key, el) {
       if (typeof _startAdminsFbSync === 'function') _startAdminsFbSync();
     },
     adminMgmt: function(){ if (typeof _startAdminsFbSync === 'function') _startAdminsFbSync(); },
+    /* ইনবক্স মনিটর/লাইভ ট্র্যাকিং পেজে আগে এডমিন লিস্ট লোডই হতো না (এই key-টা
+       allInits-এ ছিল না), ফলে state.admins খালি থেকে যেত আর মনিটরিং কাজ করত না */
+    liveTrack: function(){ if (typeof _startAdminsFbSync === 'function') _startAdminsFbSync(); },
     circular: function(){ if (typeof _startCircularsFbSync === 'function') _startCircularsFbSync(); }
   });
   if (allInits[key]) setTimeout(() => allInits[key](), 50);
@@ -31683,6 +31786,8 @@ function ltSwitchTab(tab, btn) {
   document.getElementById('lt-panel-activity').style.display = tab === 'activity' ? '' : 'none';
   document.getElementById('lt-panel-inbox').style.display   = tab === 'inbox'    ? '' : 'none';
   if (tab === 'inbox') {
+    // নিরাপত্তা — কোনো কারণে এডমিন লিস্ট এখনো লোড না হয়ে থাকলে এখানেও চালু করো
+    if (typeof _startAdminsFbSync === 'function') _startAdminsFbSync();
     ltRenderAdminList();
     // সব admins-এর client chat listener চালু করো
     (state.admins || []).forEach(function(a) { _ltStartClientChatListener(String(a.id)); });
@@ -32822,8 +32927,8 @@ function downloadMonthlyPDF() {
     const fee  = apps.reduce((s,ap) => s+(ap.appliedAmount||0), 0);
     const sc   = calcServiceCharge(fee);
     const remaining = fee - sc;
-    /* প্রতিটি এডমিনের নিজস্ব কমিশন রেট ব্যবহার করো */
-    const aComm    = (a.comm != null ? a.comm : admPct);
+    /* প্রতিটি এডমিনের নিজস্ব কমিশন রেট ব্যবহার করো — customTnC.commRate → comm → global default */
+    const aComm    = (a.customTnC && a.customTnC.commRate != null) ? a.customTnC.commRate : (a.comm != null ? a.comm : admPct);
     const aCompPct = 100 - aComm;
     const adm  = Math.round(remaining * aComm / 100);
     const comp = sc + Math.round(remaining * aCompPct / 100);
@@ -32888,11 +32993,38 @@ function downloadAdminAppPDF() {
   if (!admin) return;
   const admPct  = state.commission?.admin ?? 65;
   const compPct = state.commission?.company ?? 35;
-  const apps = (state.applications || []).filter(ap => String(ap.adminId) === String(adminId));
+
+  /* মাসিক টেবিলে বর্তমানে যে মাস/বছর সিলেক্ট করা আছে — PDF-এও ঠিক সেই মাসেরই হিসাব আসবে
+     (openAdminAppModal-এর সাথে সিঙ্ক করা) */
+  const monthSelEl2 = document.getElementById('monthSelect');
+  const yearSelEl2  = document.getElementById('yearSelect');
+  const bnMapPdf2 = {'০':'0','১':'1','২':'2','৩':'3','৪':'4','৫':'5','৬':'6','৭':'7','৮':'8','৯':'9'};
+  const selMonthPdf2 = parseInt(monthSelEl2?.value || (new Date().getMonth()+1));
+  const selYearPdf2  = parseInt((yearSelEl2?.value || String(new Date().getFullYear())).replace(/[০-৯]/g, c => bnMapPdf2[c]||c));
+  const monthLabelPdf2 = monthSelEl2 ? monthSelEl2.options[monthSelEl2.selectedIndex].text : '';
+  const yearLabelPdf2  = yearSelEl2 ? yearSelEl2.options[yearSelEl2.selectedIndex].text : String(selYearPdf2);
+
+  function appMatchesAdminPdf(ap) {
+    if (ap.date) {
+      let m, y;
+      if (ap.date.includes('-')) { const p = ap.date.split('-').map(Number); y = p[0]; m = p[1]; }
+      else { const p = ap.date.split('/').map(Number); m = p[1]; y = p[2]; }
+      if (!isNaN(m) && !isNaN(y)) return m === selMonthPdf2 && y === selYearPdf2;
+    }
+    if (ap.completedTs) {
+      const dt = new Date(ap.completedTs);
+      return (dt.getMonth()+1) === selMonthPdf2 && dt.getFullYear() === selYearPdf2;
+    }
+    return false;
+  }
+
+  const apps = (state.applications || [])
+    .filter(ap => String(ap.adminId) === String(adminId) && appMatchesAdminPdf(ap))
+    .sort((a,b) => (b.completedTs||0) - (a.completedTs||0));
   const totalFee = apps.reduce((s,ap) => s+(ap.appliedAmount||0), 0);
   const totalSC  = calcServiceCharge(totalFee);
-  /* এডমিনের নিজস্ব কমিশন রেট */
-  const aCommPdf   = (admin.comm != null ? admin.comm : admPct);
+  /* কমিশন: customTnC.commRate → comm → global default — এই অগ্রাধিকারে (renderMonthly/openAdminAppModal-এর সাথে সিঙ্ক) */
+  const aCommPdf   = (admin.customTnC && admin.customTnC.commRate != null) ? admin.customTnC.commRate : (admin.comm != null ? admin.comm : admPct);
   const aCompPdfPct = 100 - aCommPdf;
   const totalRem  = totalFee - totalSC;
   const totalAdm  = Math.round(totalRem * aCommPdf / 100);
@@ -32917,7 +33049,7 @@ function downloadAdminAppPDF() {
   }).join('') || `<tr><td colspan="9" style="text-align:center;padding:24px;color:#8A9BB0;">কোনো আবেদন নেই</td></tr>`;
 
   const html = `
-  ${_pdfHeader(`${admin.name} — আবেদন রিপোর্ট`, `কোড: ${admin.code} | এলাকা: ${admin.area}`)}
+  ${_pdfHeader(`${admin.name} — আবেদন রিপোর্ট (${monthLabelPdf2} ${yearLabelPdf2})`, `কোড: ${admin.code} | এলাকা: ${admin.area}`)}
   <div class="pdf-meta">
     <div class="pdf-meta-item">মোট আবেদন: <strong>${apps.length}টি</strong></div>
     <div class="pdf-meta-item">মোট সার্ভিস চার্জ: <strong>৳${totalFee.toLocaleString()}</strong></div>
@@ -32949,7 +33081,7 @@ function downloadAdminAppPDF() {
     <span>স্বয়ংক্রিয়ভাবে তৈরি — মুদ্রণের জন্য</span>
   </div>`;
 
-  _printPDF(html, `${admin.name}_আবেদন_রিপোর্ট`);
+  _printPDF(html, `${admin.name}_আবেদন_রিপোর্ট_${monthLabelPdf2}_${yearLabelPdf2}`);
   toast(`${admin.name}-এর PDF প্রস্তুত হচ্ছে`, 'success');
 }
 
@@ -33098,6 +33230,7 @@ async function publishCircular() {
   const editId    = document.getElementById('circEditId').value;
 
   if (!title) { toast('শিরোনাম প্রয়োজন', 'error'); return; }
+  if (!expiry) { toast('মেয়াদ শেষের তারিখ আবশ্যক — তারিখ ছাড়া সার্কুলার প্রকাশ করা যাবে না', 'error'); return; }
 
   const btn = document.getElementById('circSubmitBtn');
   if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> সংরক্ষণ হচ্ছে...'; }
@@ -33709,9 +33842,10 @@ function acmRenderMessages(id) {
     const rowClick = (_acmSelectMode && m.id) ? `onclick="acmToggleSelectMsg('${m.id}')"` : '';
     const rowStyle = _acmSelectMode ? `cursor:pointer;${isSelected?'background:rgba(11,150,136,0.16);border-radius:10px;':''}` : '';
     if (isSent) {
+      const _acmTickCls = m.readAt ? 'chat-tick read' : 'chat-tick delivered';
       const _acmSentBody = m.file
-        ? `${content}<div class="chat-bubble-time" style="text-align:right;font-size:10px;color:var(--gray);margin-top:2px;">${m.time} <i class="fas fa-check-double chat-tick read"></i></div>`
-        : `<div class="chat-bubble sent">${content}<div class="chat-bubble-time">${m.time} <i class="fas fa-check-double chat-tick read"></i></div></div>`;
+        ? `${content}<div class="chat-bubble-time" style="text-align:right;font-size:10px;color:var(--gray);margin-top:2px;">${m.time} <i class="fas fa-check-double ${_acmTickCls}"></i></div>`
+        : `<div class="chat-bubble sent">${content}<div class="chat-bubble-time">${m.time} <i class="fas fa-check-double ${_acmTickCls}"></i></div></div>`;
       return `<div class="chat-msg-row sent" ${m.id ? `data-msgid="${m.id}"` : ''} style="${rowStyle}" ${lp} ${rowClick}>
         ${chk}
         ${_acmSentBody}
@@ -33748,7 +33882,7 @@ function _admChatStartListener(id) {
     const hidden = (typeof _saGetHidden === 'function') ? _saGetHidden(key, 'super') : [];
     const fbMsgs = msgs
       .filter(m => !hidden.includes(m.id))
-      .map(m => ({ from: m.from, text: m.text||'', time: m.time||'', ts: m.ts, id: m.id, file: m.file||null }));
+      .map(m => ({ from: m.from, text: m.text||'', time: m.time||'', ts: m.ts, id: m.id, file: m.file||null, readAt: m.readAt||null }));
     // NOTE: localFiles concat সরানো হয়েছে — Firebase-এ ফাইল save হওয়ার পর
     // listener নিজেই update করে, তাই concat করলে duplicate হয়ে যেত।
     p3state.chatMessages[id] = fbMsgs;
@@ -33763,6 +33897,10 @@ function _admChatStartListener(id) {
       acmRenderMessages(id);
       const box = document.getElementById('acmMsgBox');
       if (box) box.scrollTop = box.scrollHeight;
+      // সুপার-অ্যাডমিন এই চ্যাট দেখছে — এডমিনের পাঠানো unread মেসেজ "পড়া" মার্ক করো
+      if (typeof window.fbMarkSAMessagesRead === 'function') {
+        window.fbMarkSAMessagesRead(key, 'super', fbMsgs);
+      }
     }
 
     // contact preview ও unread আপডেট করো
@@ -34236,7 +34374,8 @@ function renderChatMessages(adminId) {
        }
      }
     if (isMine) {
-      const _sentBody = fileHtml ? `${fileHtml}${safe ? `<div class="chat-bubble sent" style="margin-top:2px;">${safe}<span class="chat-bubble-time">${m.time||''} <i class="fas fa-check-double" style="font-size:9px;color:#53BDEB;margin-left:2px;"></i></span></div>` : `<div class="cp-msg-bubble-time" style="font-size:10px;color:rgba(255,255,255,0.7);text-align:right;margin-top:2px;">${m.time||''} <i class="fas fa-check-double" style="font-size:9px;color:#53BDEB;"></i></div>`}` : `<div class="chat-bubble sent">${safe}<span class="chat-bubble-time">${m.time||''} <i class="fas fa-check-double" style="font-size:9px;color:#53BDEB;margin-left:2px;"></i></span></div>`;
+      const _rcmTickColor = m.readAt ? '#53BDEB' : '#8696A0';
+      const _sentBody = fileHtml ? `${fileHtml}${safe ? `<div class="chat-bubble sent" style="margin-top:2px;">${safe}<span class="chat-bubble-time">${m.time||''} <i class="fas fa-check-double" style="font-size:9px;color:${_rcmTickColor};margin-left:2px;"></i></span></div>` : `<div class="cp-msg-bubble-time" style="font-size:10px;color:rgba(255,255,255,0.7);text-align:right;margin-top:2px;">${m.time||''} <i class="fas fa-check-double" style="font-size:9px;color:${_rcmTickColor};"></i></div>`}` : `<div class="chat-bubble sent">${safe}<span class="chat-bubble-time">${m.time||''} <i class="fas fa-check-double" style="font-size:9px;color:${_rcmTickColor};margin-left:2px;"></i></span></div>`;
       return `<div class="chat-msg-row sent" data-msgid="${mid}" style="${selStyle}${selBg}" ${lp}>
         ${checkDot}
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;max-width:68%;flex:1;">
@@ -36085,6 +36224,19 @@ function sendBroadcastMessage() {
 
   if (typeof lsSave === 'function') lsSave();
 
+  // Save to broadcast history (নোটিশ সেভের আগেই history item বানাও, যাতে noticeId পরে ঠিকভাবে যুক্ত করা যায়)
+  var _lastBcId = Date.now();
+  _bcHistory.unshift({
+    id: _lastBcId,
+    text: txt,
+    type: _bcMsgType,
+    typeLabel: typeLabels[_bcMsgType] || '',
+    recipients: selected.map(function(c) { return c.name; }),
+    time: time
+  });
+  if (_bcHistory.length > 20) _bcHistory = _bcHistory.slice(0,20);
+  _bcHistorySave();
+
   // -- নোটিশ বোর্ডে সেভ করো (Firestore notices) --
   (function() {
     var priorityMap  = { normal:'low', urgent:'high', info:'medium', reminder:'medium' };
@@ -36097,14 +36249,20 @@ function sendBroadcastMessage() {
     var _title    = titleMap[_bcMsgType]    || 'ব্রডকাস্ট বার্তা';
     var _priority = priorityMap[_bcMsgType] || 'low';
     var _txt      = txt;
+    var _bcIdForNotice = _lastBcId;
+    var _targetAdmins = selected.map(function(c) { return String(c.id); });
     function _trySaveNotice(attempt) {
       if (typeof window.fbSaveNotice === 'function') {
-        window.fbSaveNotice(_title, _txt, _priority).then(function(noticeId) {
+        window.fbSaveNotice(_title, _txt, _priority, _targetAdmins).then(function(noticeId) {
           if (noticeId) {
             // history item এ noticeId সেভ করো যাতে delete করা যায়
-            var item = _bcHistory.find(function(h) { return h.id === _lastBcId; });
+            var item = _bcHistory.find(function(h) { return h.id === _bcIdForNotice; });
             if (item) { item.noticeId = noticeId; _bcHistorySave(); bcRenderHistory(); }
-            toast('✅ নোটিশ বোর্ডে পাঠানো হয়েছে — সকল এডমিন দেখতে পাবে', 'success');
+            if (_targetAdmins.length) {
+              toast('✅ নোটিশ বোর্ডে পাঠানো হয়েছে — ' + _targetAdmins.length + ' জন নির্বাচিত এডমিন দেখতে পাবেন', 'success');
+            } else {
+              toast('✅ নোটিশ বোর্ডে পাঠানো হয়েছে — সকল এডমিন দেখতে পাবে', 'success');
+            }
           } else {
             toast('❌ নোটিশ পাঠানো যায়নি — Firebase error (console দেখুন)', 'error');
           }
@@ -36117,19 +36275,6 @@ function sendBroadcastMessage() {
     }
     _trySaveNotice(0);
   })();
-
-  // Save to broadcast history
-  var _lastBcId = Date.now();
-  _bcHistory.unshift({
-    id: _lastBcId,
-    text: txt,
-    type: _bcMsgType,
-    typeLabel: typeLabels[_bcMsgType] || '',
-    recipients: selected.map(function(c) { return c.name; }),
-    time: time
-  });
-  if (_bcHistory.length > 20) _bcHistory = _bcHistory.slice(0,20);
-  _bcHistorySave();
 
   // Reset
   document.getElementById('broadcastMsgInput').value = '';
@@ -36414,7 +36559,7 @@ function chatRenderMessages(id) {
               ${m.text}
               <div class="chat-bubble-time">
                 ${m.time}
-                <span class="chat-tick ${m.read?'read':'delivered'}"><i class="fas fa-check-double"></i></span>
+                <span class="chat-tick ${(m.readAt || m.read) ? 'read' : 'delivered'}"><i class="fas fa-check-double"></i></span>
               </div>
             </div>
           </div>`;
@@ -37138,6 +37283,7 @@ function saRunBingSearch() {
    SUPER ADMIN — MINIMIZE & LOGOUT
 ================================================================ */
 function saMinimizePanel() {
+  window._saMinimized = true;
   const wrapper = document.getElementById('superAdminWrapper');
   if (wrapper) wrapper.style.display = 'none';
   document.body.style.overflow = '';
@@ -37152,7 +37298,7 @@ function saMinimizePanel() {
   }
   /* ফিরে আসার বাটন দেখাও */
   const returnBtn = document.getElementById('returnToSuperAdminBtn');
-  if (returnBtn) returnBtn.style.display = 'block';
+  if (returnBtn) returnBtn.style.setProperty('display', 'block', 'important');
   const hero = document.getElementById('hero');
   if (hero) hero.scrollIntoView({ behavior: 'smooth' });
   else window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -37243,13 +37389,20 @@ document.addEventListener('keydown', e => {
   let _currentAdminId = null;
   let _allNotices = [];
 
+  /* ── এই এডমিন কি এই নোটিশের প্রাপক? targetAdmins খালি/null হলে সবাই প্রাপক ── */
+  function _nbIsRecipient(n) {
+    if (!n.targetAdmins || !Array.isArray(n.targetAdmins) || n.targetAdmins.length === 0) return true;
+    return n.targetAdmins.includes(_currentAdminId);
+  }
+
   /* ── Firebase listener চালু করো ── */
   function startNoticeboard(adminId) {
     _currentAdminId = String(adminId);
     if (_nbUnsubscribe) { _nbUnsubscribe(); _nbUnsubscribe = null; }
     function _tryListen(attempt) {
       if (typeof window.fbListenNotices === 'function') {
-        _nbUnsubscribe = window.fbListenNotices(function(notices) {
+        _nbUnsubscribe = window.fbListenNotices(function(allNotices) {
+          const notices = allNotices.filter(_nbIsRecipient);
           _allNotices = notices;
           renderTopbarNotices(notices);
           renderPanelNotices(notices);
