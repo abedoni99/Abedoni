@@ -300,6 +300,11 @@
   };
 
   // ── সুপার এডমিন: পেমেন্ট গ্রহণ করো ──
+  function _moduleEscHtml(s) {
+    if (!s) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
   window.fbApprovePaymentRequest = async function(reqId, appId, reqData) {
     try {
       await updateDoc(doc(db, "payment_requests", reqId), { status: 'approved', approvedAt: serverTimestamp() });
@@ -327,7 +332,7 @@
           const _cMIc = { bkash: '#E2136E', nagad: '#E05C00', rocket: '#6A0DAD' };
           const _cMTx = { bkash: '#C2004E', nagad: '#E05C00', rocket: '#6A0DAD' };
           const _cMNm = { bkash: 'বিকাশ', nagad: 'নগদ', rocket: 'রকেট' };
-          const _cRefHtml = _cRef ? (_cIsPhone ? `<div style="font-size:11px;color:#555;background:${_cMBg[method]||'#fff0f6'};padding:6px 10px;border-radius:6px;"><i class="fas fa-mobile-screen-button" style="margin-right:4px;color:${_cMIc[method]||'#E2136E'};"></i>${_cMNm[method]||'পেমেন্ট'} নম্বর: <strong style="color:${_cMTx[method]||'#C2004E'}">${escHtml(_cRef)}</strong></div>` : `<div style="font-size:11px;color:#555;background:#f0f4ff;padding:6px 10px;border-radius:6px;"><i class="fas fa-hashtag" style="margin-right:4px;color:#0A2463;"></i>ট্রানজেকশন আইডি: <strong style="color:#0A2463;">${escHtml(_cRef)}</strong></div>`) : '';
+          const _cRefHtml = _cRef ? (_cIsPhone ? `<div style="font-size:11px;color:#555;background:${_cMBg[method]||'#fff0f6'};padding:6px 10px;border-radius:6px;"><i class="fas fa-mobile-screen-button" style="margin-right:4px;color:${_cMIc[method]||'#E2136E'};"></i>${_cMNm[method]||'পেমেন্ট'} নম্বর: <strong style="color:${_cMTx[method]||'#C2004E'}">${_moduleEscHtml(_cRef)}</strong></div>` : `<div style="font-size:11px;color:#555;background:#f0f4ff;padding:6px 10px;border-radius:6px;"><i class="fas fa-hashtag" style="margin-right:4px;color:#0A2463;"></i>ট্রানজেকশন আইডি: <strong style="color:#0A2463;">${_moduleEscHtml(_cRef)}</strong></div>`) : '';
           const confirmHtml = `<div style="padding:0;overflow:hidden;border-radius:12px;min-width:220px;max-width:min(280px,85vw);box-shadow:0 2px 16px rgba(0,0,0,0.15);" data-pq-approved="${pqId}"><div style="background:linear-gradient(135deg,#15803d,#22c55e);color:#fff;padding:10px 14px;display:flex;align-items:center;gap:8px;"><div style="width:26px;height:26px;background:rgba(255,255,255,0.2);border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:14px;color:#fff;">৳</div><span style="font-weight:700;font-size:13px;">পেমেন্ট কনফার্ম</span><span style="margin-left:auto;font-size:11px;background:rgba(255,255,255,0.3);color:#fff;padding:2px 8px;border-radius:50px;"><i class="fas fa-check-double" style="margin-right:3px;"></i>সম্পন্ন</span></div><div style="background:#fff;border:1px solid #bbf7d0;border-top:none;border-radius:0 0 12px 12px;padding:14px;font-size:13px;color:#1a1a2e;font-family:sans-serif;"><div style="margin-bottom:10px;padding:12px 14px;background:linear-gradient(135deg,#d1fae5,#a7f3d0);border:2px solid #22c55e;border-radius:10px;text-align:center;"><div style="font-size:28px;margin-bottom:6px;">✅</div><div style="font-size:14px;font-weight:800;color:#15803d;margin-bottom:3px;">পেমেন্ট সম্পন্ন হয়েছে!</div><div style="font-size:12px;color:#166534;font-weight:600;">এডমিন আপনার কাজ শুরু করবেন</div></div>${svcName ? `<div style="margin-bottom:6px;"><div style="color:#888;font-size:11px;">সার্ভিস</div><div style="font-weight:700;color:#15803d;">${svcName}</div></div>` : ''}${totalAmt ? `<div style="margin-bottom:6px;"><div style="color:#888;font-size:11px;">পেমেন্ট পরিমাণ</div><div style="font-weight:800;color:#15803d;font-size:16px;">৳ ${Number(totalAmt).toLocaleString('bn-BD')}</div></div>` : ''}${_cRefHtml}</div></div>`;
           await addDoc(collection(db, "applications", appId, "messages"), {
             from: "admin",
@@ -514,12 +519,16 @@
           let ts = null;
           if (d.createdAt && typeof d.createdAt.toMillis === 'function') ts = d.createdAt.toMillis();
           else if (d.createdAt && d.createdAt.seconds) ts = d.createdAt.seconds * 1000;
+          // isHtml card text সংরক্ষণ করো (কোটেশন/পেমেন্ট/ডেলিভারি)
           return {
             id: m.id,
             from: d.from || 'client',
-            text: d.text || null,
+            text: (d.isHtml && d.text) ? '[HTML card]' : (d.text || null),
+            isHtml: d.isHtml || false,
             time: d.time || d.timeStr || '',
-            file: d.file || null,
+            file: d.file ? { name: d.file.name || null, size: d.file.size || null, type: d.file.type || null } : null,
+            paymentConfirmed: d.paymentConfirmed || false,
+            paymentRejected: d.paymentRejected || false,
             deleted: d.deleted || false,
             ts: ts
           };
@@ -13666,33 +13675,89 @@ function cpTickHtml(m) {
 
 function cpRenderMessages(msgs) {
   const container = document.getElementById('cpMessages');
+  if (!container) return;
 
-  // select mode-এ পুরো innerHTML rebuild করলে blink ও scroll হয় — in-place update করো
+  // select mode-এ in-place visual update — rebuild করবো না
   if (_cpSelectMode) {
-    // নতুন মেসেজ থাকলে শেষে append করো (scroll ছাড়া)
-    const existing = new Set();
-    container.querySelectorAll('[data-msgid]').forEach(function(r) { existing.add(r.getAttribute('data-msgid')); });
-    msgs.forEach(function(m) {
-      if (!m.id || existing.has(m.id)) return;
-      const row = document.createElement('div');
-      row.className = 'cp-msg-row';
-      row.setAttribute('data-msgid', m.id);
-      row.style.cssText = 'display:flex; flex-direction:column; width:100%; box-sizing:border-box; padding:2px 6px; border-radius:6px; gap:2px;'
-        + (m.from === 'client' ? ' align-items:flex-end;' : ' align-items:flex-start;');
-      const div = document.createElement('div');
-      div.className = 'cp-msg ' + m.from;
-      const _txt = m.text || '';
-      const _safe = _txt.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      div.innerHTML = `<div class="cp-msg-bubble">${_safe}</div><span class="cp-msg-time">${m.time||''}${m.from === 'client' ? cpTickHtml(m) : ''}</span>`;
-      row.appendChild(div);
-      container.appendChild(row);
-    });
     _cpApplySelectVisuals();
     return;
   }
 
-  container.innerHTML = '';
-  msgs.forEach(m => {
+  // ── Incremental update: HTML card (payment quotation/delivery) গুলো re-render করবো না ──
+  // কারণ: পুরো innerHTML rebuild করলে pqTrxInput_xxx input-এ টাইপ করা মুছে যায়, blink হয়।
+  // শুধু নতুন message append করো, পুরনো টা ছুঁবো না।
+
+  const existingIds = new Set();
+  container.querySelectorAll('[data-msgid]').forEach(function(el) {
+    existingIds.add(el.getAttribute('data-msgid'));
+  });
+
+  // DOM-এ আছে কিন্তু msgs-এ নেই (deleted) — সরিয়ে দাও
+  const newIdSet = new Set((msgs || []).filter(function(m){ return m.id; }).map(function(m){ return m.id; }));
+  container.querySelectorAll('[data-msgid]').forEach(function(el) {
+    if (!newIdSet.has(el.getAttribute('data-msgid'))) el.remove();
+  });
+
+  // msgs-এ নেই কিন্তু DOM-এ empty state আছে — সরাও
+  if (msgs && msgs.length > 0) {
+    const emptyEl = container.querySelector('[data-cp-empty]');
+    if (emptyEl) emptyEl.remove();
+  }
+
+  // কোনো message নেই
+  if (!msgs || !msgs.length) {
+    if (!container.querySelector('[data-cp-empty]')) {
+      container.innerHTML = '<div data-cp-empty style="text-align:center;padding:48px 20px;color:var(--gray);"><i class="fas fa-comment-dots" style="font-size:32px;display:block;margin-bottom:10px;opacity:0.3;"></i><div style="font-size:13px;">এখনো কোনো মেসেজ নেই।</div></div>';
+    }
+    return;
+  }
+
+  // পুরনো non-msgid (empty state) elements সরাও
+  Array.from(container.children).forEach(function(el) {
+    if (!el.getAttribute('data-msgid')) el.remove();
+  });
+
+  // নতুন messages append করো — read tick আপডেট করো বিদ্যমানগুলোতে
+  let lastEl = null;
+  msgs.forEach(function(m) {
+    if (m.id && existingIds.has(m.id)) {
+      // বিদ্যমান element: শুধু read-tick আপডেট করো
+      const existingEl = container.querySelector('[data-msgid="' + m.id + '"]');
+      if (existingEl) {
+        const timeEl = existingEl.querySelector('.cp-msg-time');
+        if (timeEl && m.from === 'client') {
+          timeEl.innerHTML = (m.time || '') + cpTickHtml(m);
+        }
+        lastEl = existingEl;
+        return;
+      }
+    }
+    // নতুন message — তৈরি করো
+    const row = _cpBuildMsgRow(m);
+    if (lastEl) {
+      lastEl.insertAdjacentElement('afterend', row);
+    } else {
+      // সঠিক অবস্থানে insert করো (id অনুযায়ী order বজায় রাখো)
+      const allRows = container.querySelectorAll('[data-msgid]');
+      let inserted = false;
+      for (let i = 0; i < allRows.length; i++) {
+        const existM = msgs.find(function(x){ return x.id === allRows[i].getAttribute('data-msgid'); });
+        const newIdx = msgs.indexOf(m);
+        const existIdx = existM ? msgs.indexOf(existM) : -1;
+        if (existIdx > newIdx) {
+          container.insertBefore(row, allRows[i]);
+          inserted = true;
+          break;
+        }
+      }
+      if (!inserted) container.appendChild(row);
+    }
+    lastEl = row;
+  });
+  // শেষ message-এর পরে যে পুরনো elements আছে সেগুলো মুছো (shouldn't happen but safety)
+}
+
+function _cpBuildMsgRow(m) {
     // ── পুরো-width row wrapper — হোয়াটসঅ্যাপের মতো যেকোনো জায়গায় লংপ্রেস করলে সিলেক্ট হবে ──
     const row = document.createElement('div');
     row.className = 'cp-msg-row';
@@ -13790,8 +13855,7 @@ function cpRenderMessages(msgs) {
     } else {
       row.appendChild(div);
     }
-    container.appendChild(row);
-  });
+    return row;
 }
 
 /* ── ডেলিভারি ফরম — স্টার রিভিউ ও সাবমিট (global scope-এ রাখতে হবে কারণ innerHTML-এ script execute হয় না) ── */
@@ -13858,8 +13922,16 @@ function cpRenderMessages(msgs) {
           deliveryCompletedAt: new Date().toISOString(),
           status: 3
         }).then(function(){
-          // ── আবেদনের আপডেট কনফার্ম হওয়ার পরই চ্যাট/নোটিফিকেশন ক্লিনআপ শুরু করো —
-          //    আগে-পরে করলে rules-এর deliveryCompleted চেক ব্যর্থ হতে পারে। ──
+          // ── listener বন্ধ করো আগে, তারপর chat data মুছো ──
+          if (window._cpUnsubscribe) {
+            try { window._cpUnsubscribe(); } catch(e) {}
+            window._cpUnsubscribe = null;
+          }
+          if (window._cpStatusUnsub) {
+            try { window._cpStatusUnsub(); } catch(e) {}
+            window._cpStatusUnsub = null;
+          }
+          // ── আবেদনের আপডেট কনফার্ম হওয়ার পরই চ্যাট/নোটিফিকেশন ক্লিনআপ শুরু করো ──
           if (typeof window.fbCompleteNotificationByAppId === 'function') {
             window.fbCompleteNotificationByAppId(key, {
               appliedAmount: _dfCharge,
@@ -13868,7 +13940,16 @@ function cpRenderMessages(msgs) {
             }).catch(function(e){ console.error('auto-complete notification error:', e); });
           }
           if (typeof window.fbDeleteChatData === 'function') {
-            window.fbDeleteChatData(key).catch(function(e){ console.error('auto-delete chat data error:', e); });
+            window.fbDeleteChatData(key).then(function() {
+              // ক্লায়েন্ট পোর্টাল UI আপডেট করো — ইনবক্স খালি দেখাও
+              if (typeof cpCurrentApp !== 'undefined' && cpCurrentApp) {
+                cpCurrentApp.messages = [];
+              }
+              const cpMsgs = document.getElementById('cpMessages');
+              if (cpMsgs) {
+                cpMsgs.innerHTML = '<div style="text-align:center;padding:40px 20px;color:#888;"><i class="fas fa-check-circle" style="font-size:32px;color:#22c55e;display:block;margin-bottom:10px;"></i><div style="font-size:13px;font-weight:600;">ডেলিভারি সম্পন্ন হয়েছে।<br>চ্যাট আর্কাইভ করা হয়েছে।</div></div>';
+              }
+            }).catch(function(e){ console.error('auto-delete chat data error:', e); });
           }
         }).catch(function(e){ console.error('dfSubmitForm firebase error:', e); });
       }
