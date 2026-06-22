@@ -21447,41 +21447,6 @@ function sendQuotationFromModal() {
   const noteVal  = (document.getElementById('qimNote') || {}).value || '';
   const docsHtml = qimDocTags.map(d => `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;"><i class="fas fa-circle-dot" style="font-size:8px;color:var(--accent);"></i><span>${d}</span></div>`).join('');
 
-  // Admin chat window-এ bubble যোগ করো
-  const msgs = document.getElementById('chatMessages');
-  if (msgs) {
-    const wrap = document.createElement('div');
-    wrap.className = 'msg-wrap mine';
-    wrap.innerHTML = `
-      <div class="msg-avatar"><i class="fas fa-user" style="font-size:13px;"></i></div>
-      <div style="max-width:85%;">
-        <div class="msg-bubble" style="padding:0;overflow:hidden;background:transparent;box-shadow:none;">
-          <div style="background:linear-gradient(135deg,var(--primary),var(--primary-light));color:#fff;padding:10px 14px;border-radius:12px 12px 0 0;display:flex;align-items:center;gap:8px;">
-            <i class="fas fa-file-invoice" style="color:var(--accent);"></i>
-            <span style="font-weight:700;font-size:13px;">সার্ভিস কোটেশন</span>
-            <span style="margin-left:auto;font-size:11px;background:rgba(201,162,39,0.25);color:var(--accent);padding:2px 8px;border-radius:50px;">পাঠানো হয়েছে</span>
-          </div>
-          <div style="background:#fff;border:1px solid var(--gray-light);border-top:none;border-radius:0 0 12px 12px;padding:12px 14px;font-size:13px;color:var(--text-dark);">
-            <div style="margin-bottom:8px;"><span style="color:var(--gray);font-size:11px;">সার্ভিস</span><div style="font-weight:700;color:var(--primary);">${svcName}</div></div>
-            ${docsHtml.length ? `<div style="margin-bottom:8px;"><span style="color:var(--gray);font-size:11px;">প্রয়োজনীয় ডকুমেন্টস</span><div style="margin-top:4px;">${docsHtml}</div></div>` : ''}
-            <div style="display:flex;gap:12px;margin-bottom:8px;">
-              <div><span style="color:var(--gray);font-size:11px;">সার্ভিস চার্জ</span><div style="font-weight:600;">৳ ${amtNum.toLocaleString('bn-BD')}</div></div>
-              ${appFee ? `<div><span style="color:var(--gray);font-size:11px;">আবেদন ফি</span><div style="font-weight:600;">৳ ${appFee.toLocaleString('bn-BD')}</div></div>` : ''}
-            </div>
-            <div style="background:linear-gradient(135deg,rgba(10,36,99,0.05),rgba(201,162,39,0.05));border:1px solid rgba(201,162,39,0.25);border-radius:8px;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-              <span style="font-weight:700;color:var(--primary);">মোট বিল</span>
-              <span style="font-size:18px;font-weight:800;color:var(--primary);font-family:'Inter',sans-serif;">৳ ${total.toLocaleString('bn-BD')}</span>
-            </div>
-            ${delivery ? `<div style="font-size:12px;color:var(--gray);"><i class="fas fa-clock" style="margin-right:4px;"></i>ডেলিভারি: ${delivery}</div>` : ''}
-            ${noteVal ? `<div style="margin-top:6px;font-size:12px;color:var(--text-mid);background:var(--off-white);padding:6px 8px;border-radius:6px;">${noteVal}</div>` : ''}
-          </div>
-        </div>
-        <div class="msg-time">${currentTime()} <i class="fas fa-check-double" style="font-size:9px;color:#8696A0;margin-left:3px;"></i></div>
-      </div>`;
-    msgs.appendChild(wrap);
-    msgs.scrollTop = msgs.scrollHeight;
-  }
-
   // Firebase-এ ক্লায়েন্টের ইনবক্সে পাঠাও
   if (typeof window.fbAdminSendToClient === 'function') {
     const docsListHtml = qimDocTags.map(d =>
@@ -21880,39 +21845,6 @@ function sendPaymentQuotationToClient() {
     return;
   }
 
-  // Admin chat window bubble
-  const msgs = document.getElementById('chatMessages');
-  if (msgs) {
-    const wrap = document.createElement('div');
-    wrap.className = 'msg-wrap mine';
-    wrap.innerHTML = `
-      <div class="msg-avatar"><i class="fas fa-user" style="font-size:13px;"></i></div>
-      <div style="max-width:85%;">
-        <div class="msg-bubble" style="padding:0;overflow:hidden;background:transparent;box-shadow:none;">
-          <div style="background:linear-gradient(135deg,${cfg.color1},${cfg.color2});color:#fff;padding:10px 14px;border-radius:12px 12px 0 0;display:flex;align-items:center;gap:8px;">
-            <i class="fas fa-bangladeshi-taka-sign" style="color:rgba(255,255,255,0.85);"></i>
-            <span style="font-weight:700;font-size:13px;">পেমেন্ট কোটেশন</span>
-            <span style="margin-left:auto;font-size:11px;background:rgba(255,255,255,0.2);color:#fff;padding:2px 8px;border-radius:50px;">${cfg.name}</span>
-          </div>
-          <div style="background:#fff;border:1px solid ${cfg.bgBorder};border-top:none;border-radius:0 0 12px 12px;padding:12px 14px;font-size:13px;color:var(--text-dark);">
-            <div style="margin-bottom:8px;"><span style="color:var(--gray);font-size:11px;">সার্ভিস</span><div style="font-weight:700;color:${cfg.textColor};">${svcName}</div></div>
-            <div style="background:linear-gradient(135deg,${cfg.bgLight},rgba(255,255,255,0.5));border:1.5px solid ${cfg.bgBorder};border-radius:8px;padding:9px 12px;display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-              <span style="font-weight:700;color:${cfg.textColor};">মোট বিল</span>
-              <span style="font-size:20px;font-weight:800;color:${cfg.textColor};font-family:'Inter',sans-serif;">৳ ${totalInput.toLocaleString('bn-BD')}</span>
-            </div>
-            <div style="background:#f8f8f8;border-radius:8px;padding:8px 10px;">
-              <div style="font-size:11px;color:#888;margin-bottom:2px;">${cfg.name} নম্বর (${payLabel})</div>
-              <div style="font-size:15px;font-weight:800;color:${cfg.textColor};letter-spacing:1px;">${payFmt}</div>
-            </div>
-            ${note ? `<div style="margin-top:8px;font-size:12px;color:var(--text-mid);background:var(--off-white);padding:6px 8px;border-radius:6px;">${note}</div>` : ''}
-          </div>
-        </div>
-        <div class="msg-time">${currentTime()} <i class="fas fa-check-double" style="font-size:9px;color:#8696A0;margin-left:3px;"></i></div>
-      </div>`;
-    msgs.appendChild(wrap);
-    msgs.scrollTop = msgs.scrollHeight;
-  }
-
   // Firebase-এ ক্লায়েন্টের ইনবক্সে পাঠাও
   if (typeof window.fbAdminSendToClient === 'function') {
     const paymentQuotationHtml = `<div id="pqCard_${_pqId}" style="padding:0;overflow:hidden;border-radius:12px;min-width:220px;max-width:min(280px,85vw);box-shadow:0 2px 16px rgba(0,0,0,0.15);"><div id="pqCardHeader_${_pqId}" style="background:linear-gradient(135deg,${cfg.color1},${cfg.color2});color:#fff;padding:10px 14px;display:flex;align-items:center;gap:8px;"><div style="width:26px;height:26px;background:rgba(255,255,255,0.2);border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:14px;color:#fff;">৳</div><span style="font-weight:700;font-size:13px;">পেমেন্ট কোটেশন</span><span id="pqCardBadge_${_pqId}" style="margin-left:auto;font-size:11px;background:rgba(255,255,255,0.2);color:#fff;padding:2px 8px;border-radius:50px;">${cfg.name}</span></div><div style="background:#fff;border:1px solid ${cfg.bgBorder};border-top:none;border-radius:0 0 12px 12px;padding:12px 14px;font-size:13px;color:#1a1a2e;font-family:sans-serif;"><div style="margin-bottom:8px;"><div style="color:#888;font-size:11px;">সার্ভিস</div><div style="font-weight:700;color:${cfg.textColor};">${svcName}</div></div><div style="background:linear-gradient(135deg,${cfg.bgLight},rgba(255,255,255,0.5));border:1.5px solid ${cfg.bgBorder};border-radius:8px;padding:9px 12px;display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><span style="font-weight:700;color:${cfg.textColor};">মোট বিল</span><span style="font-size:22px;font-weight:800;color:${cfg.textColor};font-family:'Inter',sans-serif;">৳ ${totalInput.toLocaleString('bn-BD')}</span></div><div style="background:${cfg.bgLight};border-radius:8px;padding:10px 12px;margin-bottom:8px;"><div style="font-size:11px;color:${cfg.textColor};font-weight:600;margin-bottom:4px;"><i class="fas fa-mobile-screen-button" style="margin-right:4px;"></i>${cfg.name}এ ${cfg.sendLabel}</div><div style="font-size:20px;font-weight:800;color:${cfg.textColor};letter-spacing:2px;font-family:'Inter',sans-serif;">${payFmt}</div></div><div style="display:flex;flex-direction:column;gap:5px;font-size:12px;color:#555;margin-bottom:6px;"><div>① ${(cfg.steps||[])[0]||cfg.name+' অ্যাপ → <b>'+cfg.stepVerb+'</b>'}</div><div>② নম্বর দিন: <b style="color:${cfg.textColor};">${payFmt}</b></div><div>③ পরিমাণ দিন: <b style="color:${cfg.textColor};">৳ ${totalInput.toLocaleString('bn-BD')}</b></div><div>④ নিচে <b>যে নম্বর থেকে পাঠিয়েছেন সেই নম্বর</b> অথবা <b>ট্রানজেকশন আইডি</b> দিয়ে সাবমিট করুন</div></div>${note ? `<div style="font-size:12px;color:#555;background:#f8f8f8;padding:6px 8px;border-radius:6px;margin-bottom:8px;">${note}</div>` : ''}<div id="pqTrxBox_${_pqId}" style="margin-top:8px;padding:10px 12px;background:#f0f4ff;border:1.5px solid rgba(10,36,99,0.15);border-radius:10px;display:block;" data-appid="${_activeChatAppId}" data-cname="${encodeURIComponent(clientName)}" data-cphone="${encodeURIComponent(clientPhone)}" data-svc="${encodeURIComponent(svcName)}" data-amt="${totalInput}" data-method="${method}"><div style="font-size:11px;font-weight:700;color:#0A2463;margin-bottom:4px;display:block;"><i class="fas fa-mobile-screen-button" style="margin-right:4px;color:${cfg.textColor};"></i>${cfg.name} নম্বর <span style="color:#888;font-weight:500;">অথবা</span> <i class="fas fa-hashtag" style="margin-right:2px;color:#0A2463;"></i>ট্রানজেকশন আইডি</div><div style="font-size:11px;color:#888;margin-bottom:8px;">যে নম্বর থেকে পাঠিয়েছেন সেই নম্বর <b>অথবা</b> ট্রানজেকশন আইডি — যেকোনো একটি দিলেই হবে</div><div style="display:block;width:100%;"><input type="text" id="pqTrxInput_${_pqId}" placeholder="যেমন: 01XXXXXXXXX অথবা 9AB1CDE2FG" maxlength="25" style="display:block;width:100%;padding:11px 14px;border:2px solid rgba(10,36,99,0.2);border-radius:10px;font-size:14px;font-weight:700;font-family:'Inter',sans-serif;letter-spacing:1px;outline:none;color:#0A2463;background:#fff;box-sizing:border-box;transition:border-color 0.2s;" oninput="this.style.borderColor=this.value?'#0A2463':'rgba(10,36,99,0.2)'" onfocus="this.style.borderColor='#0A2463'" onblur="this.style.borderColor=this.value?'#0A2463':'rgba(10,36,99,0.2)'" onkeydown="if(event.key==='Enter')submitClientPaymentTrx('${_pqId}')"></div><input type="hidden" id="pqSenderNum_${_pqId}" value=""><div style="display:block;width:100%;margin-top:8px;"><button onclick="submitClientPaymentTrx('${_pqId}')" style="display:block;width:100%;padding:11px 16px;background:linear-gradient(135deg,#0A2463,#1B3A8C);color:#fff;border:none;border-radius:10px;font-size:13px;font-weight:700;font-family:'Hind Siliguri',sans-serif;cursor:pointer;text-align:center;box-shadow:0 3px 10px rgba(10,36,99,0.25);box-sizing:border-box;" onmouseover="this.style.opacity='0.88'" onmouseout="this.style.opacity='1'"><i class="fas fa-paper-plane" style="color:#C9A227;font-size:12px;margin-right:6px;"></i>সাবমিট করুন</button></div><div id="pqTrxDone_${_pqId}" style="display:none;margin-top:7px;font-size:12px;font-weight:700;color:#2F6B4F;background:#e8f8ef;padding:7px 10px;border-radius:7px;"><i class="fas fa-circle-check"></i> ট্রানজেকশন সাবমিট হয়েছে — যাচাইয়ের অপেক্ষায়</div></div><div id="pqTrxApproved_${_pqId}" style="display:none;margin-top:10px;padding:12px 14px;background:linear-gradient(135deg,#d1fae5,#a7f3d0);border:2px solid #22c55e;border-radius:10px;text-align:center;"><div style="font-size:26px;margin-bottom:6px;">✅</div><div style="font-size:14px;font-weight:800;color:#15803d;margin-bottom:3px;">পেমেন্ট সম্পন্ন হয়েছে!</div><div style="font-size:12px;color:#166534;font-weight:600;">এডমিন আপনার কাজ শুরু করবেন</div></div></div></div>`;
@@ -22010,47 +21942,6 @@ function sendDeliveryForm() {
   };
   const chargeNum = parseFloat(chargeVal) || 0;
   const clientName = (document.getElementById('dfmClientName') || {}).textContent || '';
-
-  // ── এডমিনের চ্যাট বাবল ──
-  const msgs = document.getElementById('chatMessages');
-  if (msgs) {
-    const wrap = document.createElement('div');
-    wrap.className = 'msg-wrap mine';
-    wrap.innerHTML = `
-      <div class="msg-avatar"><i class="fas fa-user" style="font-size:13px;"></i></div>
-      <div style="max-width:88%;">
-        <div class="msg-bubble" style="padding:0;overflow:hidden;background:transparent;box-shadow:none;">
-          <div style="background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;padding:10px 14px;border-radius:12px 12px 0 0;display:flex;align-items:center;gap:8px;">
-            <i class="fas fa-file-circle-check" style="color:#bbf7d0;"></i>
-            <span style="font-weight:700;font-size:13px;">ডেলিভারি নিশ্চিতকরণ ফরম</span>
-            <span style="margin-left:auto;font-size:11px;background:rgba(255,255,255,0.2);color:#fff;padding:2px 8px;border-radius:50px;">পাঠানো হয়েছে</span>
-          </div>
-          <div style="background:#fff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;padding:12px 14px;font-size:13px;color:#1e293b;">
-            <div style="margin-bottom:8px;">
-              <div style="color:#64748b;font-size:11px;">সার্ভিস</div>
-              <div style="font-weight:700;color:#16a34a;">${svcVal}</div>
-              <div style="font-size:12px;color:#64748b;margin-top:2px;">সার্ভিস চার্জ — <strong style="color:#1e293b;">৳ ${chargeNum.toLocaleString('bn-BD')}</strong></div>
-            </div>
-            <div style="display:flex;gap:10px;margin-bottom:8px;">
-              <div style="flex:1;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:7px 10px;">
-                <div style="color:#64748b;font-size:10px;margin-bottom:2px;"><i class="fas fa-inbox" style="color:#7c3aed;margin-right:3px;"></i>গ্রহণ</div>
-                <div style="font-size:12px;font-weight:600;font-family:'Inter',sans-serif;">${fmtDt(recvVal)}</div>
-              </div>
-              <div style="flex:1;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:7px 10px;">
-                <div style="color:#64748b;font-size:10px;margin-bottom:2px;"><i class="fas fa-check-circle" style="color:#16a34a;margin-right:3px;"></i>ডেলিভারি</div>
-                <div style="font-size:12px;font-weight:600;font-family:'Inter',sans-serif;">${fmtDt(delvVal)}</div>
-              </div>
-            </div>
-            <div style="font-size:11px;color:#64748b;border-top:1px solid #f1f5f9;padding-top:7px;line-height:1.6;">
-              ডেলিভারি বুঝে পেলে <strong>ডেলিভারি বুঝিয়া পাইলাম</strong> অপশনটি সিলেক্ট করে সাবমিট করুন।
-            </div>
-          </div>
-        </div>
-        <div class="msg-time">${currentTime()} <i class="fas fa-check-double" style="font-size:9px;color:#8696A0;margin-left:3px;"></i></div>
-      </div>`;
-    msgs.appendChild(wrap);
-    msgs.scrollTop = msgs.scrollHeight;
-  }
 
   // ── Firebase-এ ক্লায়েন্টের ইনবক্সে পাঠাও ──
   if (_activeChatAppId && typeof window.fbAdminSendToClient === 'function') {
