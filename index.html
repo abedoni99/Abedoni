@@ -13340,7 +13340,9 @@ function cpLoadDashboard() {
   cpCurrentApp._adminCode = adminCode;
   cpCurrentApp._adminPhoto = adminPhoto;
 
-  cpRenderMessages(app.messages);
+  // NOTE: cpRenderMessages এখানে ডাকা হয় না।
+  // মেসেজ রেন্ডারের জন্য আলাদা fbListenMessages listener আছে।
+  // status-change-এ মেসেজ rebuild করলে race condition ও flicker হয়।
 
   // Header: avatar + নাম + ফোন + ট্র্যাকিং কোড
   var hdrAvatar = document.getElementById('cpHdrAvatar');
@@ -13683,6 +13685,17 @@ function cpTickHtml(m) {
     : ' <i class="fas fa-check-double tick"></i>';
 }
 
+// ── cpRenderMessages cache: শেষবার render করা msgs এখানে রাখা হয় ──
+// একই data দিয়ে বারবার rebuild এড়ানোর জন্য (race condition guard)
+var _cpLastRenderedMsgs = null;
+
+function _cpMsgSignature(msgs) {
+  if (!msgs || !msgs.length) return '';
+  return msgs.map(function(m) {
+    return (m.id || '') + '|' + (m.text ? m.text.length : '') + '|' + (m.readAt ? '1' : '0') + '|' + (m.deleted ? 'd' : '') + '|' + (m._optId || '');
+  }).join(',');
+}
+
 function cpRenderMessages(msgs) {
   const container = document.getElementById('cpMessages');
   if (!container) return;
@@ -13693,9 +13706,65 @@ function cpRenderMessages(msgs) {
     return;
   }
 
-  // ── isHtml card (payment quotation/delivery) গুলো preserve করো —
-  // এগুলো rebuild করলে input-এর value হারায় এবং blink হয়।
-  // বাকি সব normal rebuild করো।
+  // ── Guard: একই data দিয়ে redundant rebuild স্কিপ করো ──
+  // (যেমন status + message listener একসাথে fire করলে দ্বিতীয়টা no-op হবে)
+  const newSig = _cpMsgSignature(msgs);
+  if (_cpLastRenderedMsgs !== null && newSig === _cpMsgSignature(_cpLastRenderedMsgs)) {
+    // শুধু readAt tick আপডেট করো — পুরো rebuild দরকার নেই
+    if (msgs && msgs.length) {
+      msgs.forEach(function(m) {
+        if (!m.id) return;
+        const row = container.querySelector('[data-msgid="' + m.id + '"]');
+        if (!row) return;
+        const tickEl = row.querySelector('.cp-msg-time');
+        if (tickEl && m.from === 'client') {
+          // readAt বদলে থাকলে tick আপডেট করো
+          const prevM = _cpLastRenderedMsgs.find(function(x){ return x.id === m.id; });
+          if (prevM && prevM.readAt !== m.readAt) {
+            const newTick = m.readAt
+              ? '<i class="fas fa-check-double" style="font-size:9px;color:#53BDEB;margin-left:2px;"></i>'
+              : '<i class="fas fa-check-double" style="font-size:9px;color:#8696A0;margin-left:2px;"></i>';
+            tickEl.innerHTML = (m.time || '') + newTick;
+          }
+        }
+      });
+    }
+    _cpLastRenderedMsgs = msgs ? msgs.slice() : [];
+    return;
+  }
+  _cpLastRenderedMsgs = msgs ? msgs.slice() : [];
+
+  // ── বর্তমানে DOM-এ যত মেসেজ আছে সেটার সাথে নতুন তালিকা তুলনা করো ──
+  // যদি শুধু metadata (readAt) বদলেছে এবং সংখ্যা/ক্রম একই থাকে —
+  // তাহলে container rebuild না করে শুধু in-place update করো।
+  const domIds = [];
+  container.querySelectorAll('[data-msgid]').forEach(function(el) {
+    domIds.push(el.getAttribute('data-msgid'));
+  });
+  const newIds = (msgs || []).filter(function(m){ return m.id; }).map(function(m){ return m.id; });
+  const sameStructure = domIds.length > 0 && domIds.length === newIds.length &&
+    domIds.every(function(id, i){ return id === newIds[i]; });
+
+  if (sameStructure) {
+    // ক্রম ও সংখ্যা একই — শুধু readAt tick in-place আপডেট করো, container স্পর্শ করো না
+    msgs.forEach(function(m) {
+      if (!m.id) return;
+      const row = container.querySelector('[data-msgid="' + m.id + '"]');
+      if (!row) return;
+      const tickEl = row.querySelector('.cp-msg-time');
+      if (tickEl && m.from === 'client') {
+        const newTick = m.readAt
+          ? '<i class="fas fa-check-double" style="font-size:9px;color:#53BDEB;margin-left:2px;"></i>'
+          : '<i class="fas fa-check-double" style="font-size:9px;color:#8696A0;margin-left:2px;"></i>';
+        tickEl.innerHTML = (m.time || '') + newTick;
+      }
+    });
+    return;
+  }
+
+  // ── কাঠামো বদলেছে (নতুন মেসেজ এসেছে বা মুছেছে) — পুরো rebuild করো ──
+  // isHtml card গুলো (কোটেশন/পেমেন্ট/ডেলিভারি) DOM থেকে তুলে রাখো যাতে
+  // input focus ও event listener অক্ষুণ্ণ থাকে।
   const preservedCards = {};
   container.querySelectorAll('[data-msgid]').forEach(function(el) {
     if (el.querySelector('.cp-html-card') || el.querySelector('[id^="pqTrxBox_"]') || el.querySelector('[id^="pqCard_"]') || el.querySelector('[id^="dfStarVal_"]')) {
@@ -13710,7 +13779,7 @@ function cpRenderMessages(msgs) {
   }
 
   msgs.forEach(function(m) {
-    // preserved HTML card পুনরায় ব্যবহার করো
+    // preserved HTML card পুনরায় ব্যবহার করো (move/reinsert করা হচ্ছে ক্রম ঠিক রেখে)
     if (m.id && preservedCards[m.id]) {
       container.appendChild(preservedCards[m.id]);
       return;
