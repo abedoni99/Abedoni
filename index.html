@@ -13187,7 +13187,7 @@ function cpSearchApp() {
           const stillUploading = (cpCurrentApp.messages || []).filter(m => m._optId && m.file && m.file._uploading);
           cpCurrentApp.messages = [...mapped, ...stillUploading];
           cpRenderMessages(cpCurrentApp.messages);
-          _cpScrollToBottom();
+          _cpScrollToBottom(false);
           // ক্লায়েন্ট এই চ্যাট দেখছে — এডমিনের পাঠানো unread মেসেজ "পড়া" মার্ক করো
           if (typeof window.fbMarkMessagesRead === 'function') {
             window.fbMarkMessagesRead(docId, 'client', mapped);
@@ -13410,7 +13410,7 @@ if (window.visualViewport) {
     if (overlay && overlay.classList.contains('open')) {
       const msgs = document.getElementById('cpMessages');
       if (msgs) {
-        requestAnimationFrame(() => { msgs.scrollTop = msgs.scrollHeight; });
+        requestAnimationFrame(() => { _cpScrollToBottom(false); });
       }
     }
   });
@@ -13655,10 +13655,20 @@ function _cpApplySelectVisuals() {
   });
 }
 
-function _cpScrollToBottom() {
+function _cpScrollToBottom(force) {
   if (_cpSelectMode) return;
   const box = document.getElementById('cpMessages');
   if (!box) return;
+  // ── force=false (passive আপডেট, যেমন নতুন snapshot) হলে: ইউজার যদি কোটেশন/ডেলিভারি
+  // কার্ডের ইনপুটে টাইপ করছে বা চেকবক্স ধরছে, অথবা ইচ্ছাকৃতভাবে উপরে স্ক্রল করে আছে —
+  // তাহলে জোর করে নিচে নামাবো না। শুধু নিজের পাঠানো মেসেজ/ফাইলের সময় (force=true/undefined) সবসময় নামবে। ──
+  if (force === false) {
+    const active = document.activeElement;
+    const focusedInside = active && box.contains(active) &&
+      (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable);
+    const nearBottom = (box.scrollHeight - box.scrollTop - box.clientHeight) < 80;
+    if (focusedInside || !nearBottom) return;
+  }
   requestAnimationFrame(function() {
     box.scrollTop = box.scrollHeight;
     setTimeout(function() { box.scrollTop = box.scrollHeight; }, 80);
