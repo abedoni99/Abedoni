@@ -13677,84 +13677,37 @@ function cpRenderMessages(msgs) {
   const container = document.getElementById('cpMessages');
   if (!container) return;
 
-  // select mode-এ in-place visual update — rebuild করবো না
+  // select mode-এ in-place visual update
   if (_cpSelectMode) {
     _cpApplySelectVisuals();
     return;
   }
 
-  // ── Incremental update: HTML card (payment quotation/delivery) গুলো re-render করবো না ──
-  // কারণ: পুরো innerHTML rebuild করলে pqTrxInput_xxx input-এ টাইপ করা মুছে যায়, blink হয়।
-  // শুধু নতুন message append করো, পুরনো টা ছুঁবো না।
-
-  const existingIds = new Set();
+  // ── isHtml card (payment quotation/delivery) গুলো preserve করো —
+  // এগুলো rebuild করলে input-এর value হারায় এবং blink হয়।
+  // বাকি সব normal rebuild করো।
+  const preservedCards = {};
   container.querySelectorAll('[data-msgid]').forEach(function(el) {
-    existingIds.add(el.getAttribute('data-msgid'));
-  });
-
-  // DOM-এ আছে কিন্তু msgs-এ নেই (deleted) — সরিয়ে দাও
-  const newIdSet = new Set((msgs || []).filter(function(m){ return m.id; }).map(function(m){ return m.id; }));
-  container.querySelectorAll('[data-msgid]').forEach(function(el) {
-    if (!newIdSet.has(el.getAttribute('data-msgid'))) el.remove();
-  });
-
-  // msgs-এ নেই কিন্তু DOM-এ empty state আছে — সরাও
-  if (msgs && msgs.length > 0) {
-    const emptyEl = container.querySelector('[data-cp-empty]');
-    if (emptyEl) emptyEl.remove();
-  }
-
-  // কোনো message নেই
-  if (!msgs || !msgs.length) {
-    if (!container.querySelector('[data-cp-empty]')) {
-      container.innerHTML = '<div data-cp-empty style="text-align:center;padding:48px 20px;color:var(--gray);"><i class="fas fa-comment-dots" style="font-size:32px;display:block;margin-bottom:10px;opacity:0.3;"></i><div style="font-size:13px;">এখনো কোনো মেসেজ নেই।</div></div>';
+    if (el.querySelector('.cp-html-card') || el.querySelector('[id^="pqTrxBox_"]') || el.querySelector('[id^="pqCard_"]') || el.querySelector('[id^="dfStarVal_"]')) {
+      preservedCards[el.getAttribute('data-msgid')] = el;
     }
+  });
+
+  container.innerHTML = '';
+  if (!msgs || !msgs.length) {
+    container.innerHTML = '<div style="text-align:center;padding:48px 20px;color:var(--gray);"><i class="fas fa-comment-dots" style="font-size:32px;display:block;margin-bottom:10px;opacity:0.3;"></i><div style="font-size:13px;">এখনো কোনো মেসেজ নেই।</div></div>';
     return;
   }
 
-  // পুরনো non-msgid (empty state) elements সরাও
-  Array.from(container.children).forEach(function(el) {
-    if (!el.getAttribute('data-msgid')) el.remove();
-  });
-
-  // নতুন messages append করো — read tick আপডেট করো বিদ্যমানগুলোতে
-  let lastEl = null;
   msgs.forEach(function(m) {
-    if (m.id && existingIds.has(m.id)) {
-      // বিদ্যমান element: শুধু read-tick আপডেট করো
-      const existingEl = container.querySelector('[data-msgid="' + m.id + '"]');
-      if (existingEl) {
-        const timeEl = existingEl.querySelector('.cp-msg-time');
-        if (timeEl && m.from === 'client') {
-          timeEl.innerHTML = (m.time || '') + cpTickHtml(m);
-        }
-        lastEl = existingEl;
-        return;
-      }
+    // preserved HTML card পুনরায় ব্যবহার করো
+    if (m.id && preservedCards[m.id]) {
+      container.appendChild(preservedCards[m.id]);
+      return;
     }
-    // নতুন message — তৈরি করো
     const row = _cpBuildMsgRow(m);
-    if (lastEl) {
-      lastEl.insertAdjacentElement('afterend', row);
-    } else {
-      // সঠিক অবস্থানে insert করো (id অনুযায়ী order বজায় রাখো)
-      const allRows = container.querySelectorAll('[data-msgid]');
-      let inserted = false;
-      for (let i = 0; i < allRows.length; i++) {
-        const existM = msgs.find(function(x){ return x.id === allRows[i].getAttribute('data-msgid'); });
-        const newIdx = msgs.indexOf(m);
-        const existIdx = existM ? msgs.indexOf(existM) : -1;
-        if (existIdx > newIdx) {
-          container.insertBefore(row, allRows[i]);
-          inserted = true;
-          break;
-        }
-      }
-      if (!inserted) container.appendChild(row);
-    }
-    lastEl = row;
+    container.appendChild(row);
   });
-  // শেষ message-এর পরে যে পুরনো elements আছে সেগুলো মুছো (shouldn't happen but safety)
 }
 
 function _cpBuildMsgRow(m) {
