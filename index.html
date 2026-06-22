@@ -13848,11 +13848,12 @@ function _cpBuildMsgRow(m) {
   };
 
   window.dfSubmitForm = function(key) {
-    // key 'x' হলে client portal tracking ID থেকে নাও
+    // key 'x' হলে client portal tracking ID থেকে নাও (fallback chain বাড়ানো হলো)
     var cardKey = key; // card-এ যে key দিয়ে ID বানানো হয়েছে
     if (!key || key === 'x') {
       key = (typeof window._cpTrackingId !== 'undefined' && window._cpTrackingId) ? window._cpTrackingId
            : (typeof cpCurrentApp !== 'undefined' && cpCurrentApp && cpCurrentApp.id) ? cpCurrentApp.id
+           : (typeof _activeChatAppId !== 'undefined' && _activeChatAppId) ? _activeChatAppId
            : key;
     }
     // DOM element: cardKey দিয়ে প্রথমে, তারপর resolved key দিয়ে
@@ -13862,6 +13863,14 @@ function _cpBuildMsgRow(m) {
     var checked = !!(_el('dfWarnCheck') || {}).checked;
     if (!starVal) { alert('অনুগ্রহ করে রিভিউতে স্টার দিন।'); return; }
     if (!checked) { alert('সতর্কতার চেকবক্সে টিক দিন।'); return; }
+
+    // ── key resolve ব্যর্থ হলে silent fail না করে স্পষ্ট error দেখাও ──
+    if (!key || key === 'x') {
+      alert('⚠️ ট্র্যাকিং আইডি খুঁজে পাওয়া যায়নি। পেজ রিলোড করে আবার চেষ্টা করুন।');
+      console.error('dfSubmitForm: key resolve failed (still "x"/empty) — Firestore write skipped.');
+      return;
+    }
+
     var btn = _el('dfSubmitBtn');
     if (btn) { btn.disabled = true; btn.textContent = '✔ সাবমিট হয়েছে'; btn.style.background = '#94a3b8'; }
 
