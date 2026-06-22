@@ -18216,7 +18216,7 @@ async function doLogin() {
   window.currentAdminRole = currentAdmin.role;
 
   // adminSession সেভ করো যাতে page reload এ noticeboard চালু হয়
-  try { localStorage.setItem('adminSession', JSON.stringify(currentAdmin)); } catch(e) {}
+  try { sessionStorage.setItem('adminSession', JSON.stringify(currentAdmin)); } catch(e) {}
 
   // state.admins-এ এই এডমিনের comm রেট আপডেট করো (Firestore sync-এর আগে লোকাল মিলিয়ে দাও)
   if (currentAdmin.id != null && typeof state !== 'undefined' && state.admins && _loginComm != null) {
@@ -18452,7 +18452,7 @@ function setupProfileSubmit() {
       currentAdmin.name  = name;
       currentAdmin.phone = phone;
     }
-    try { localStorage.setItem('adminSession', JSON.stringify(currentAdmin)); } catch(e2) {}
+    try { sessionStorage.setItem('adminSession', JSON.stringify(currentAdmin)); } catch(e2) {}
   }
 
   // প্রোফাইল প্যানেল আপডেট করো
@@ -18481,7 +18481,7 @@ function showLoginError() {
 
 function adminDoLogout() {
   currentAdmin = null;
-  try { localStorage.removeItem('adminSession'); } catch(e) {}
+  try { sessionStorage.removeItem('adminSession'); } catch(e) {}
   if (typeof window.fbAdminLogout === 'function') window.fbAdminLogout();
   if (_saUnsubscribe) { try { _saUnsubscribe(); } catch(e){} _saUnsubscribe = null; }
   stopAppNotifListener();
@@ -18757,7 +18757,7 @@ function switchPanel(name, fromPopState) {
   if (name === 'noticeboard') {
     setTimeout(function() {
       try {
-        var sess = JSON.parse(localStorage.getItem('adminSession') || '{}');
+        var sess = JSON.parse(sessionStorage.getItem('adminSession') || '{}');
         if (sess && sess.id && typeof window.fbMarkNoticeRead === 'function') {
           document.querySelectorAll('#nbList [data-notice-id]').forEach(function(card) {
             var nid = card.getAttribute('data-notice-id');
@@ -23440,6 +23440,10 @@ window.addEventListener('popstate', function(e) {
   if (e.state && (e.state.chatView || e.state.saChatView || e.state.saView)) return;
   // panel state → উপরের switchPanel listener সামলাবে
   if (e.state && e.state.panel) return;
+  // SA minimize state → logout করো না
+  if (e.state && e.state.saMinimized) return;
+  // Admin minimize state → logout করো না
+  if (e.state && e.state.adminMinimized) return;
 
   // ── মিনিমাইজ করা হলে লগআউট করো না ──
   if (window._adminMinimized) {
@@ -23453,21 +23457,19 @@ window.addEventListener('popstate', function(e) {
 
   // ── returnToAdminBtn দৃশ্যমান থাকলে admin minimize অবস্থায় আছে — বন্ধ করো না ──
   var returnAdminBtn = document.getElementById('returnToAdminBtn');
-  if (returnAdminBtn && returnAdminBtn.style.display !== 'none' &&
-      returnAdminBtn.style.display !== '') {
+  if (returnAdminBtn && getComputedStyle(returnAdminBtn).display !== 'none') {
     return;
   }
 
   // ── returnToSuperAdminBtn দৃশ্যমান থাকলে SA minimize অবস্থায় আছে ──
   var returnSaBtn = document.getElementById('returnToSuperAdminBtn');
-  if (returnSaBtn && returnSaBtn.style.display !== 'none' &&
-      returnSaBtn.style.display !== '') {
+  if (returnSaBtn && getComputedStyle(returnSaBtn).display !== 'none') {
     return;
   }
 
   // ── adminSession আছে এবং overlay বন্ধ আছে তাহলে minimize অবস্থা — বন্ধ করো না ──
   try {
-    var sess = JSON.parse(localStorage.getItem('adminSession') || '{}');
+    var sess = JSON.parse(sessionStorage.getItem('adminSession') || '{}');
     if (sess && sess.id) {
       var adminOverlayCheck = document.getElementById('adminModalOverlay');
       if (adminOverlayCheck && adminOverlayCheck.style.display === 'none') {
@@ -30626,7 +30628,7 @@ function saDoLogin() {
       role: adminData.role || 'super-admin'
     };
     window.currentAdminRole = currentAdmin.role;
-    try { localStorage.setItem('adminSession', JSON.stringify(currentAdmin)); } catch(e) {}
+    try { sessionStorage.setItem('adminSession', JSON.stringify(currentAdmin)); } catch(e) {}
     _createSession();
     document.getElementById('loginPage').style.animation = 'fadeOut 0.4s ease forwards';
     setTimeout(() => {
@@ -31441,7 +31443,7 @@ function apmSaveComm() {
   /* যদি চলমান লগইন এডমিনের হার পরিবর্তন হয়, currentAdmin-এও আপডেট করো */
   if (typeof currentAdmin !== 'undefined' && currentAdmin && String(currentAdmin.id) === String(a.id)) {
     currentAdmin.comm = val;
-    try { localStorage.setItem('adminSession', JSON.stringify(currentAdmin)); } catch(e2) {}
+    try { sessionStorage.setItem('adminSession', JSON.stringify(currentAdmin)); } catch(e2) {}
   }
 
   /* ADMIN_CREDENTIALS-এও আপডেট করো */
@@ -34993,6 +34995,40 @@ const p2state = {
 
 function saveSettings(type) { toast('সেটিংস সংরক্ষণ হয়েছে', 'success'); }
 
+/* "সিস্টেম সেটিংস" সেকশনে প্রথমবার ভিজিট করলে চালু হবে — কল হয় goTo()-এর
+   allInits.settings থেকে। এটা না থাকায় initSettings undefined ছিল এবং
+   প্রতিটি goTo() কলে (শুধু settings পেজে না, যেকোনো নেভিগেশনে) ReferenceError
+   ছুঁড়ত, কারণ p2inits অবজেক্ট লিটারেল তৈরির সময়ই initSettings রেফারেন্স
+   ইভ্যালুয়েট হয়। */
+function initSettings() {
+  renderRoles();
+  renderBackupList();
+  // toggle সুইচগুলো p2state.settings-এর বর্তমান মান অনুযায়ী সেট করো
+  Object.keys(p2state.settings).forEach(key => {
+    const el = document.getElementById('tog-' + key);
+    if (el) el.classList.toggle('on', !!p2state.settings[key]);
+  });
+}
+
+/* সেটিংস পেজের বাম নেভ থেকে ট্যাব সুইচ করে — settings-nav-item-এ
+   onclick="switchSettings(...)" দিয়ে কল হয়, কিন্তু ফাংশনটাই ডিফাইন করা ছিল না */
+function switchSettings(key, el) {
+  document.querySelectorAll('#settingsNav .settings-nav-item').forEach(i => i.classList.remove('active'));
+  if (el) el.classList.add('active');
+  document.querySelectorAll('#settingsContent .settings-panel').forEach(p => p.style.display = 'none');
+  const panel = document.getElementById('stg-' + key);
+  if (panel) panel.style.display = '';
+}
+
+/* সেটিংস ও অন্যান্য টগল সুইচে onclick="toggleSwitch(this,'key')" দিয়ে কল হয়,
+   কিন্তু এটাও ডিফাইন করা ছিল না */
+function toggleSwitch(el, key) {
+  el.classList.toggle('on');
+  if (p2state.settings && Object.prototype.hasOwnProperty.call(p2state.settings, key)) {
+    p2state.settings[key] = el.classList.contains('on');
+  }
+}
+
 function renderRoles() {
   const el = document.getElementById('rolesContainer');
   if (!el) return;
@@ -37779,6 +37815,8 @@ function saMinimizePanel() {
   /* ফিরে আসার বাটন দেখাও */
   const returnBtn = document.getElementById('returnToSuperAdminBtn');
   if (returnBtn) returnBtn.style.setProperty('display', 'block', 'important');
+  // history state আপডেট করো — popstate handler যেন logout না করে
+  history.replaceState({ saMinimized: true }, '');
   const hero = document.getElementById('hero');
   if (hero) hero.scrollIntoView({ behavior: 'smooth' });
   else window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -38066,7 +38104,7 @@ document.addEventListener('keydown', e => {
      permission-denied এরর আসে। */
   document.addEventListener('DOMContentLoaded', function() {
     try {
-      const sess = JSON.parse(localStorage.getItem('adminSession') || '{}');
+      const sess = JSON.parse(sessionStorage.getItem('adminSession') || '{}');
       if (sess && sess.id) {
         currentAdmin = sess;
         window.currentAdminRole = sess.role || 'admin';
@@ -38208,7 +38246,7 @@ async function clientFileDownload(trackingId, fileDocId, fileName) {
     /* ৪. Landing/Hero — admin/SA লগইন থাকলে তাদের প্যানেল রিওপেন করো, নাহলে reload */
     // admin লগইন আছে কিনা চেক করো
     var sess = null;
-    try { sess = JSON.parse(localStorage.getItem('adminSession') || '{}'); } catch(e2) {}
+    try { sess = JSON.parse(sessionStorage.getItem('adminSession') || '{}'); } catch(e2) {}
     if (sess && sess.id) {
       // admin লগইন আছে — overlay আবার খুলো
       var aOr = document.getElementById('adminModalOverlay');
