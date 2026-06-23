@@ -13785,6 +13785,8 @@ function cpRenderMessages(msgs) {
       });
     }
     _cpLastRenderedMsgs = msgs ? msgs.slice() : [];
+    // signature same হলেও wire করো — star/submit নতুন করে যোগ হয়নি কিনা নিশ্চিত করো
+    _cpWireHtmlCards(container);
     return;
   }
   _cpLastRenderedMsgs = msgs ? msgs.slice() : [];
@@ -13854,6 +13856,64 @@ function cpRenderMessages(msgs) {
     const heightAfter = container.scrollHeight;
     container.scrollTop = scrollBefore + (heightAfter - heightBefore);
   }
+
+  // ── সব isHtml card-এ star/submit/payment event wire করো ──
+  // preservedCards reuse হলেও এটা প্রতিবার run করে সব কিছু ঠিক রাখে
+  _cpWireHtmlCards(container);
+}
+
+function _cpWireHtmlCards(container) {
+  if (!container) return;
+  const appId = (typeof window._cpTrackingId !== 'undefined' && window._cpTrackingId)
+    || (typeof cpCurrentApp !== 'undefined' && cpCurrentApp && cpCurrentApp.id) || '';
+
+  // Star rating — data-star attribute আছে এমন সব span
+  container.querySelectorAll('[data-star]').forEach(function(star) {
+    if (star._cpWired) return; // একবারই wire করো
+    star._cpWired = true;
+    star.style.pointerEvents = 'auto';
+    star.style.cursor = 'pointer';
+    star.addEventListener('click', function(e) {
+      e.stopPropagation();
+      const val = parseInt(star.getAttribute('data-star'));
+      const row = container.querySelector('[id^="dfStarRow_"]');
+      const key = row ? row.id.replace('dfStarRow_', '') : appId;
+      if (typeof window.dfSetStar === 'function') window.dfSetStar(star, key || appId, val);
+    });
+    star.addEventListener('mousedown', function(e) { e.stopPropagation(); });
+    star.addEventListener('touchstart', function(e) { e.stopPropagation(); }, {passive:true});
+  });
+
+  // Delivery submit button
+  container.querySelectorAll('[id^="dfSubmitBtn_"]').forEach(function(btn) {
+    if (btn._cpWired) return;
+    btn._cpWired = true;
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      const key = btn.id.replace('dfSubmitBtn_', '');
+      if (typeof window.dfSubmitForm === 'function') window.dfSubmitForm(key || appId);
+    });
+  });
+
+  // Payment TnC checkbox
+  container.querySelectorAll('[id^="dfWarnCheck_"]').forEach(function(chk) {
+    if (chk._cpWired) return;
+    chk._cpWired = true;
+    chk.addEventListener('click', function(e) { e.stopPropagation(); });
+    chk.addEventListener('mousedown', function(e) { e.stopPropagation(); });
+    chk.addEventListener('touchstart', function(e) { e.stopPropagation(); }, {passive:true});
+  });
+
+  // Payment trx submit
+  container.querySelectorAll('[id^="pqTrxBox_"]').forEach(function(box) {
+    box.querySelectorAll('input, button, textarea').forEach(function(el) {
+      if (el._cpWired) return;
+      el._cpWired = true;
+      el.addEventListener('click', function(e) { e.stopPropagation(); });
+      el.addEventListener('mousedown', function(e) { e.stopPropagation(); });
+      el.addEventListener('touchstart', function(e) { e.stopPropagation(); }, {passive:true});
+    });
+  });
 }
 
 function _cpBuildMsgRow(m) {
@@ -13938,36 +13998,7 @@ function _cpBuildMsgRow(m) {
       // HTML কার্ডের জন্য আলাদা class — pre-wrap বন্ধ ও padding/background সরানো
       const bubbleClass = isHtmlCard ? 'cp-msg-bubble cp-html-card' : 'cp-msg-bubble';
       div.innerHTML = `<div class="${bubbleClass}" style="${optStyle}">${safe}</div><span class="cp-msg-time">${m.time||''}${m.from === 'client' ? cpTickHtml(m) : ''}</span>`;
-      // ── isHtml card: onclick CSP সমস্যা এড়াতে event listener দিয়ে wire করো ──
-      if (isHtmlCard) {
-        // Star rating
-        div.querySelectorAll('[data-star]').forEach(function(star) {
-          star.addEventListener('click', function() {
-            const val = parseInt(star.getAttribute('data-star'));
-            const appId = (typeof window._cpTrackingId !== 'undefined' && window._cpTrackingId)
-              || (typeof cpCurrentApp !== 'undefined' && cpCurrentApp && cpCurrentApp.id) || 'x';
-            if (typeof window.dfSetStar === 'function') window.dfSetStar(star, appId, val);
-          });
-        });
-        // Submit button
-        const submitBtn = div.querySelector('[id^="dfSubmitBtn_"]');
-        if (submitBtn) {
-          submitBtn.addEventListener('click', function() {
-            const appId = (typeof window._cpTrackingId !== 'undefined' && window._cpTrackingId)
-              || (typeof cpCurrentApp !== 'undefined' && cpCurrentApp && cpCurrentApp.id) || 'x';
-            if (typeof window.dfSubmitForm === 'function') window.dfSubmitForm(appId);
-          });
-        }
-        // Payment submit button
-        const payBtn = div.querySelector('[id^="pqTrxBox_"] button, [onclick*="submitClientPaymentTrx"]');
-        if (payBtn) {
-          const origOnclick = payBtn.getAttribute('onclick');
-          if (origOnclick) {
-            payBtn.removeAttribute('onclick');
-            payBtn.addEventListener('click', function() { eval(origOnclick); });
-          }
-        }
-      }
+
     }
     if (_cpSelectMode && _cpSelected.has(m.id)) {
       const dot = document.createElement('div');
