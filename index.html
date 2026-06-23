@@ -84,14 +84,18 @@
     }
   };
 
-  // ── রিয়েলটাইম চ্যাট শোনো ──
+
+  // ── রিয়েলটাইম চ্যাট শোনো ──
+  // orderBy বাদ — Firestore index না থাকলে failed-precondition আসতো
   window.fbListenMessages = function(trackingId, callback, errorCallback) {
-    const q = query(
-      collection(db, "applications", trackingId, "messages"),
-      orderBy("createdAt", "asc")
-    );
-    return onSnapshot(q, (snap) => {
-      const msgs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    return onSnapshot(collection(db, "applications", trackingId, "messages"), (snap) => {
+      const msgs = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .sort(function(a, b) {
+          const ta = a.createdAt ? (a.createdAt.toMillis ? a.createdAt.toMillis() : (a.createdAt.seconds||0)*1000) : 0;
+          const tb = b.createdAt ? (b.createdAt.toMillis ? b.createdAt.toMillis() : (b.createdAt.seconds||0)*1000) : 0;
+          return ta - tb;
+        });
       callback(msgs);
     }, (err) => {
       console.error("fbListenMessages onSnapshot error:", err);
@@ -13236,7 +13240,10 @@ function cpSearchApp() {
         }
       }, function(err) {
         console.error('cpMessages onSnapshot error:', err);
-        alert('⚠️ ট্র্যাকিং পোর্টাল এরর (মেসেজ): ' + (err && err.code ? err.code : err));
+        // index না থাকলে বা permission error হলে একবার reload করো
+        if (err && (err.code === 'failed-precondition' || err.code === 'permission-denied')) {
+          if (typeof showToast === 'function') showToast('সংযোগ সমস্যা', 'পেজ রিলোড করুন। কোড: ' + err.code, 'error');
+        }
       });
     }
 
@@ -13257,7 +13264,6 @@ function cpSearchApp() {
         },
         function(err) {
           console.error('cpStatus onSnapshot error:', err);
-          alert('⚠️ ট্র্যাকিং পোর্টাল এরর (স্ট্যাটাস): ' + (err && err.code ? err.code : err));
         }
       );
     }
