@@ -14240,7 +14240,7 @@ function _cpBuildMsgRow(m) {
 
       // চ্যাট ভিউ বন্ধ করো
       if (typeof _activeChatAppId !== 'undefined' && _activeChatAppId === key) {
-        _activeChatAppId = null;
+        _activeChatAppId = null; window._activeChatAppId = null;
         var chatArea = document.getElementById('chatMessages');
         if (chatArea) chatArea.innerHTML = '';
         var chatWrap = document.getElementById('chatArea') || document.getElementById('chatWindow');
@@ -20179,6 +20179,7 @@ function decrementNotifCount() {
 let _acceptedChats = [];          // [{id(notifId), appId, name, service, trackCode, phone}, ...]
 let _acceptedChatsUnsub = null;
 let _activeChatAppId = null;      // বর্তমানে খোলা ক্লায়েন্টের trackingId (applications doc id)
+window._activeChatAppId = null;
 let _clientLastActivity = {};     // { appId: timestamp } — সর্বশেষ চ্যাট অনুযায়ী লিস্ট সাজানোর জন্য
 let _clientLastMsg = {};          // { appId: string } — প্রতিটি ক্লায়েন্টের শেষ মেসেজ টেক্সট
 let _clientUnread = {};           // { appId: number } — প্রতিটি ক্লায়েন্টের অপঠিত মেসেজ সংখ্যা
@@ -20517,7 +20518,7 @@ function openChat(appId, name, initials, clickedEl) {
     _layout.classList.remove('sa-chat-active');
   }
   _chatPushHistory();
-  _activeChatAppId = appId;
+  _activeChatAppId = appId; window._activeChatAppId = appId;
   // চ্যাট খুললে unread clear করো এবং lastSeen সময় সেভ করো
   setClientLastSeen(appId, Date.now());
   _clientUnread[appId] = 0;
