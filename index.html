@@ -33258,8 +33258,6 @@ function openAdminAppModal(adminId) {
 </style>
 
 <!-- Transfer & Close modals — JS দিয়ে inject হবে -->
-<div id="transferModalOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:99999;align-items:center;justify-content:center;"></div>
-<div id="closeModalOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:99999;align-items:center;justify-content:center;"></div>
 
 
 </body></html>`;
@@ -38852,13 +38850,23 @@ async function clientFileDownload(trackingId, fileDocId, fileName) {
 </script>
 
 
-<div id="transferModalOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:99999;align-items:center;justify-content:center;"></div>
-<div id="closeModalOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:99999;align-items:center;justify-content:center;"></div>
 <script>
 (function() {
   function initModals() {
     var t = document.getElementById('transferModalOverlay');
     var c = document.getElementById('closeModalOverlay');
+    if (!t) {
+      t = document.createElement('div');
+      t.id = 'transferModalOverlay';
+      t.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:999999;align-items:center;justify-content:center;';
+      document.body.appendChild(t);
+    }
+    if (!c) {
+      c = document.createElement('div');
+      c.id = 'closeModalOverlay';
+      c.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:999999;align-items:center;justify-content:center;';
+      document.body.appendChild(c);
+    }
     if (t && !t._inited) {
       t._inited = true;
       t.innerHTML = '<div style="background:#fff;border-radius:16px;padding:24px;max-width:360px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.2)">'
