@@ -13730,9 +13730,11 @@ function _cpScrollToBottom(force) {
 /* হোয়াটসঅ্যাপ-স্টাইল ডবল-টিক HTML — শুধু নিজের পাঠানো মেসেজে দেখানো হয়।
    readAt থাকলে নীল (পড়া হয়েছে), না থাকলে ধূসর (পাঠানো হয়েছে, এখনো পড়া হয়নি) */
 function cpTickHtml(m) {
+  // readAt আছে = admin দেখেছে = blue double tick
+  // readAt নেই = পাঠানো হয়েছে কিন্তু দেখেনি = grey single tick
   return m.readAt
-    ? ' <i class="fas fa-check-double tick read"></i>'
-    : ' <i class="fas fa-check-double tick"></i>';
+    ? ' <i class="fas fa-check-double tick read" style="color:#53BDEB;"></i>'
+    : ' <i class="fas fa-check tick" style="color:#8696A0;"></i>';
 }
 
 // ── cpRenderMessages cache: শেষবার render করা msgs এখানে রাখা হয় ──
@@ -13957,6 +13959,8 @@ function _cpBuildMsgRow(m) {
 (function(){
   var _dfStarLabels = ['','একদম খারাপ 😞','খারাপ 😐','মোটামুটি 🙂','ভালো 😊','অসাধারণ! 🌟'];
 
+  // delivery form state memory — rebuild হলেও হারাবে না
+  var _dfMemory = {};
   window.dfSetStar = function(el, key, val) {
     // key 'x' হলে client portal tracking ID থেকে নাও (submit-এর জন্য)
     var resolvedKey = key;
@@ -13965,6 +13969,9 @@ function _cpBuildMsgRow(m) {
                   : (typeof cpCurrentApp !== 'undefined' && cpCurrentApp && cpCurrentApp.id) ? cpCurrentApp.id
                   : resolvedKey;
     }
+    // memory-তে রাখো
+    _dfMemory[resolvedKey] = _dfMemory[resolvedKey] || {};
+    _dfMemory[resolvedKey].star = val;
     // DOM element: card-এ যে key দিয়ে ID বানানো হয়েছে সেটা দিয়ে খোঁজো (key বা resolvedKey)
     var valEl = document.getElementById('dfStarVal_' + key) || document.getElementById('dfStarVal_' + resolvedKey);
     if (!valEl) return;
@@ -13990,7 +13997,9 @@ function _cpBuildMsgRow(m) {
     }
     // DOM element: cardKey দিয়ে প্রথমে, তারপর resolved key দিয়ে
     function _el(id) { return document.getElementById(id + '_' + cardKey) || document.getElementById(id + '_' + key); }
-    var starVal = parseInt((_el('dfStarVal') || {}).value || '0');
+    var _resolvedKeyForMem = key;
+    var _mem = (typeof _dfMemory !== 'undefined' && _dfMemory[_resolvedKeyForMem]) || {};
+    var starVal = parseInt((_el('dfStarVal') || {}).value || _mem.star || '0');
     var complaint = ((_el('dfComplaintText') || {}).value || '').trim();
     var checked = !!(_el('dfWarnCheck') || {}).checked;
     if (!starVal) { alert('অনুগ্রহ করে রিভিউতে স্টার দিন।'); return; }
