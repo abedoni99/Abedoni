@@ -1,4 +1,3 @@
-// ── Modal HTML inject ──
 window._initModals = function() {
   var t = document.getElementById('transferModalOverlay');
   var c = document.getElementById('closeModalOverlay');
@@ -9,8 +8,8 @@ window._initModals = function() {
     + '<div style="font-size:12px;color:#64748b;margin-bottom:12px">ক্লায়েন্টকে জানানো হবে যে অন্য একজন Admin সাহায্য করবেন।</div>'
     + '<textarea id="transferReasonInput" placeholder="কারণ লিখুন..." rows="3" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;resize:none;outline:none;color:#1e293b"></textarea>'
     + '<div style="display:flex;gap:8px;margin-top:14px">'
-    + '<button onclick="closeTransferModal()" style="flex:1;padding:10px;border:1.5px solid #e2e8f0;background:#fff;border-radius:8px;font-size:13px;font-weight:600;color:#64748b;cursor:pointer">বাতিল</button>'
-    + '<button onclick="confirmTransfer()" style="flex:1;padding:10px;background:#f59e0b;border:none;border-radius:8px;font-size:13px;font-weight:700;color:#fff;cursor:pointer">Transfer করুন</button>'
+    + '<button onclick="window.closeTransferModal()" style="flex:1;padding:10px;border:1.5px solid #e2e8f0;background:#fff;border-radius:8px;font-size:13px;font-weight:600;color:#64748b;cursor:pointer">বাতিল</button>'
+    + '<button onclick="window.confirmTransfer()" style="flex:1;padding:10px;background:#f59e0b;border:none;border-radius:8px;font-size:13px;font-weight:700;color:#fff;cursor:pointer">Transfer করুন</button>'
     + '</div></div>';
   if (c) c.innerHTML = '<div style="background:#fff;border-radius:16px;padding:24px;max-width:360px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.2)">'
     + '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">'
@@ -19,18 +18,15 @@ window._initModals = function() {
     + '<div style="font-size:12px;color:#64748b;margin-bottom:12px">ক্লায়েন্টকে জানানো হবে এবং tracking code বন্ধ হয়ে যাবে।</div>'
     + '<textarea id="closeReasonInput" placeholder="কারণ লিখুন (ঐচ্ছিক)..." rows="3" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;resize:none;outline:none;color:#1e293b"></textarea>'
     + '<div style="display:flex;gap:8px;margin-top:14px">'
-    + '<button onclick="closeCloseModal()" style="flex:1;padding:10px;border:1.5px solid #e2e8f0;background:#fff;border-radius:8px;font-size:13px;font-weight:600;color:#64748b;cursor:pointer">বাতিল</button>'
-    + '<button onclick="confirmClose()" style="flex:1;padding:10px;background:#dc2626;border:none;border-radius:8px;font-size:13px;font-weight:700;color:#fff;cursor:pointer">Close করুন</button>'
+    + '<button onclick="window.closeCloseModal()" style="flex:1;padding:10px;border:1.5px solid #e2e8f0;background:#fff;border-radius:8px;font-size:13px;font-weight:600;color:#64748b;cursor:pointer">বাতিল</button>'
+    + '<button onclick="window.confirmClose()" style="flex:1;padding:10px;background:#dc2626;border:none;border-radius:8px;font-size:13px;font-weight:700;color:#fff;cursor:pointer">Close করুন</button>'
     + '</div></div>';
-}
+};
 document.addEventListener('DOMContentLoaded', window._initModals);
 
-window._getEl = function(id) { return document.getElementById(id); }
-
-// ── Three-dot menu ──
 window.openChatActionMenu = function(e) {
   e.stopPropagation();
-  var menu = _getEl('chatActionMenu');
+  var menu = document.getElementById('chatActionMenu');
   if (!menu) return;
   var isOpen = menu.style.display === 'flex';
   menu.style.display = isOpen ? 'none' : 'flex';
@@ -42,24 +38,25 @@ window.openChatActionMenu = function(e) {
       });
     }, 0);
   }
-}
+};
 
-// ── Transfer ──
 window.openTransferModal = function() {
-  var menu = _getEl('chatActionMenu');
+  var menu = document.getElementById('chatActionMenu');
   if (menu) menu.style.display = 'none';
-  _initModals();
-  var o = _getEl('transferModalOverlay');
+  window._initModals();
+  var o = document.getElementById('transferModalOverlay');
   if (o) o.style.display = 'flex';
-}
+};
+
 window.closeTransferModal = function() {
-  var o = _getEl('transferModalOverlay');
+  var o = document.getElementById('transferModalOverlay');
   if (o) o.style.display = 'none';
-}
+};
+
 window.confirmTransfer = async function() {
   var appId = window._activeChatAppId;
   if (!appId) return;
-  var inp = _getEl('transferReasonInput');
+  var inp = document.getElementById('transferReasonInput');
   var reason = inp ? inp.value.trim() : '';
   if (!reason) { if (inp) { inp.style.borderColor = '#f59e0b'; inp.focus(); } return; }
   var btn = document.querySelector('#transferModalOverlay button:last-child');
@@ -80,7 +77,7 @@ window.confirmTransfer = async function() {
       createdAt: mods.serverTimestamp()
     });
     await mods.updateDoc(mods.doc(db, 'applications', appId), { acceptedBy: null, status: -1 });
-    closeTransferModal();
+    window.closeTransferModal();
     if (typeof chatBackToList === 'function') chatBackToList();
     if (typeof showToast === 'function') showToast('Transfer সম্পন্ন', 'আবেদনটি pool-এ ফিরে গেছে।', 'success');
   } catch(e) {
@@ -88,24 +85,25 @@ window.confirmTransfer = async function() {
     if (btn) { btn.disabled = false; btn.textContent = 'Transfer করুন'; }
     if (typeof showToast === 'function') showToast('সমস্যা হয়েছে', e.message || 'আবার চেষ্টা করুন।', 'error');
   }
-}
+};
 
-// ── Close ──
 window.openCloseModal = function() {
-  var menu = _getEl('chatActionMenu');
+  var menu = document.getElementById('chatActionMenu');
   if (menu) menu.style.display = 'none';
-  _initModals();
-  var o = _getEl('closeModalOverlay');
+  window._initModals();
+  var o = document.getElementById('closeModalOverlay');
   if (o) o.style.display = 'flex';
-}
+};
+
 window.closeCloseModal = function() {
-  var o = _getEl('closeModalOverlay');
+  var o = document.getElementById('closeModalOverlay');
   if (o) o.style.display = 'none';
-}
+};
+
 window.confirmClose = async function() {
   var appId = window._activeChatAppId;
   if (!appId) return;
-  var inp = _getEl('closeReasonInput');
+  var inp = document.getElementById('closeReasonInput');
   var reason = inp ? inp.value.trim() : '';
   var btn = document.querySelector('#closeModalOverlay button:last-child');
   if (btn) { btn.disabled = true; btn.textContent = 'বন্ধ হচ্ছে...'; }
@@ -133,10 +131,10 @@ window.confirmClose = async function() {
           deliveryCompletedAt: new Date().toISOString(),
           status: 3, closedByAdmin: true, closeReason: reason || ''
         });
-        if (typeof window.fbDeleteChatData === 'function') await window.fbDeleteChatData = function(appId);
+        if (typeof window.fbDeleteChatData === 'function') await window.fbDeleteChatData(appId);
       } catch(e2) { console.error('close cleanup error:', e2); }
     }, 3000);
-    closeCloseModal();
+    window.closeCloseModal();
     if (typeof chatBackToList === 'function') chatBackToList();
     if (typeof showToast === 'function') showToast('আবেদন বন্ধ', 'ক্লায়েন্টকে জানানো হয়েছে।', 'success');
   } catch(e) {
@@ -144,4 +142,4 @@ window.confirmClose = async function() {
     if (btn) { btn.disabled = false; btn.textContent = 'Close করুন'; }
     if (typeof showToast === 'function') showToast('সমস্যা হয়েছে', e.message || 'আবার চেষ্টা করুন।', 'error');
   }
-    }
+};
