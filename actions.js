@@ -1,5 +1,5 @@
 // ── Modal HTML inject ──
-function _initModals() {
+window._initModals = function() {
   var t = document.getElementById('transferModalOverlay');
   var c = document.getElementById('closeModalOverlay');
   if (t) t.innerHTML = '<div style="background:#fff;border-radius:16px;padding:24px;max-width:360px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.2)">'
@@ -23,12 +23,12 @@ function _initModals() {
     + '<button onclick="confirmClose()" style="flex:1;padding:10px;background:#dc2626;border:none;border-radius:8px;font-size:13px;font-weight:700;color:#fff;cursor:pointer">Close করুন</button>'
     + '</div></div>';
 }
-document.addEventListener('DOMContentLoaded', _initModals);
+document.addEventListener('DOMContentLoaded', window._initModals);
 
-function _getEl(id) { return document.getElementById(id); }
+window._getEl = function(id) { return document.getElementById(id); }
 
 // ── Three-dot menu ──
-function openChatActionMenu(e) {
+window.openChatActionMenu = function(e) {
   e.stopPropagation();
   var menu = _getEl('chatActionMenu');
   if (!menu) return;
@@ -45,18 +45,18 @@ function openChatActionMenu(e) {
 }
 
 // ── Transfer ──
-function openTransferModal() {
+window.openTransferModal = function() {
   var menu = _getEl('chatActionMenu');
   if (menu) menu.style.display = 'none';
   _initModals();
   var o = _getEl('transferModalOverlay');
   if (o) o.style.display = 'flex';
 }
-function closeTransferModal() {
+window.closeTransferModal = function() {
   var o = _getEl('transferModalOverlay');
   if (o) o.style.display = 'none';
 }
-async function confirmTransfer() {
+window.confirmTransfer = async function() {
   var appId = window._activeChatAppId;
   if (!appId) return;
   var inp = _getEl('transferReasonInput');
@@ -91,18 +91,18 @@ async function confirmTransfer() {
 }
 
 // ── Close ──
-function openCloseModal() {
+window.openCloseModal = function() {
   var menu = _getEl('chatActionMenu');
   if (menu) menu.style.display = 'none';
   _initModals();
   var o = _getEl('closeModalOverlay');
   if (o) o.style.display = 'flex';
 }
-function closeCloseModal() {
+window.closeCloseModal = function() {
   var o = _getEl('closeModalOverlay');
   if (o) o.style.display = 'none';
 }
-async function confirmClose() {
+window.confirmClose = async function() {
   var appId = window._activeChatAppId;
   if (!appId) return;
   var inp = _getEl('closeReasonInput');
@@ -133,7 +133,7 @@ async function confirmClose() {
           deliveryCompletedAt: new Date().toISOString(),
           status: 3, closedByAdmin: true, closeReason: reason || ''
         });
-        if (typeof window.fbDeleteChatData === 'function') await window.fbDeleteChatData(appId);
+        if (typeof window.fbDeleteChatData === 'function') await window.fbDeleteChatData = function(appId);
       } catch(e2) { console.error('close cleanup error:', e2); }
     }, 3000);
     closeCloseModal();
@@ -144,4 +144,4 @@ async function confirmClose() {
     if (btn) { btn.disabled = false; btn.textContent = 'Close করুন'; }
     if (typeof showToast === 'function') showToast('সমস্যা হয়েছে', e.message || 'আবার চেষ্টা করুন।', 'error');
   }
-}
+    }
