@@ -65,12 +65,22 @@
   // ── চ্যাট মেসেজ পাঠাও ──
   window.fbSendMessage = async function(trackingId, msg) {
     try {
-      await addDoc(collection(db, "applications", trackingId, "messages"), {
-        ...msg,
+      const payload = {
+        from: msg.from || 'client',
+        text: msg.text || null,
+        time: msg.timeStr || msg.time || '',
+        timeStr: msg.timeStr || msg.time || '',
+        isHtml: false,
         createdAt: serverTimestamp()
-      });
+      };
+      if (msg.file) payload.file = msg.file;
+      if (!payload.text && !payload.file) return;
+      const ref = await addDoc(collection(db, "applications", trackingId, "messages"), payload);
+      return ref.id;
     } catch(e) {
       console.error("fbSendMessage error:", e);
+      if (typeof showToast === 'function') showToast('মেসেজ যায়নি', 'ইন্টারনেট বা পারমিশন সমস্যা।', 'error');
+      throw e;
     }
   };
 
@@ -14293,14 +14303,17 @@ function cpSendMessage() {
 
   } else {
     // ── Text only: Optimistic দেখাও, তারপর Firebase-এ পাঠাও ──
-    const optMsg = { _optId: 'opt_' + Date.now(), from: "client", text, time: timeStr, file: null };
+    const optId2 = 'opt_' + Date.now();
+    const optMsg = { _optId: optId2, from: "client", text, time: timeStr, file: null };
     _cpAppendOptimistic(optMsg);
     if (typeof window.fbSendMessage === "function") {
-      window.fbSendMessage(appId, { from: "client", text, timeStr, file: null });
+      window.fbSendMessage(appId, { from: "client", text, timeStr, file: null })
+        .catch(function() {
+          if (typeof showToast === 'function') showToast('মেসেজ যায়নি', 'আবার চেষ্টা করুন।', 'error');
+        });
     }
   }
 
-  // ── কিবোর্ড এর জায়গা ঠিক রাখো, focus হারালেই blink হয় তাই focus() কল করা হচ্ছে না ──
   _cpScrollToBottom();
 }
 
