@@ -38906,11 +38906,13 @@ async function clientFileDownload(trackingId, fileDocId, fileName) {
   window.openTransferModal = function() {
     var menu = document.getElementById('chatActionMenu');
     if (menu) menu.style.display = 'none';
-    initModals();
-    var o = document.getElementById('transferModalOverlay');
-    if (o) { o.style.display = 'flex'; }
-    var inp = document.getElementById('transferReasonInput');
-    if (inp) inp.value = '';
+    setTimeout(function() {
+      initModals();
+      var o = document.getElementById('transferModalOverlay');
+      if (o) { o.style.display = 'flex'; }
+      var inp = document.getElementById('transferReasonInput');
+      if (inp) inp.value = '';
+    }, 50);
   };
 
   window.closeTransferModal = function() {
@@ -38955,11 +38957,13 @@ async function clientFileDownload(trackingId, fileDocId, fileName) {
   window.openCloseModal = function() {
     var menu = document.getElementById('chatActionMenu');
     if (menu) menu.style.display = 'none';
-    initModals();
-    var o = document.getElementById('closeModalOverlay');
-    if (o) { o.style.display = 'flex'; }
-    var inp = document.getElementById('closeReasonInput');
-    if (inp) inp.value = '';
+    setTimeout(function() {
+      initModals();
+      var o = document.getElementById('closeModalOverlay');
+      if (o) { o.style.display = 'flex'; }
+      var inp = document.getElementById('closeReasonInput');
+      if (inp) inp.value = '';
+    }, 50);
   };
 
   window.closeCloseModal = function() {
