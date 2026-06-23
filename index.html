@@ -105,9 +105,34 @@
   };
 
   // ── এডমিন প্যানেলে সব আবেদন রিয়েলটাইম ──
+  // admin-side auto cleanup: deliveryCompleted হলে chat archive + delete করো
+  const _adminCleanupDone = new Set();
   window.fbListenApplications = function(callback) {
     return onSnapshot(collection(db, "applications"), (snap) => {
       const apps = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // ── auto cleanup: deliveryCompleted = true হলে admin থেকে delete করো ──
+      snap.docs.forEach(d => {
+        const data = d.data();
+        if (data.deliveryCompleted && !_adminCleanupDone.has(d.id)) {
+          _adminCleanupDone.add(d.id);
+          // ৫ সেকেন্ড পরে cleanup করো যাতে client-side UI update হওয়ার সময় পায়
+          setTimeout(async () => {
+            try {
+              if (typeof window.fbDeleteChatData === 'function') {
+                await window.fbDeleteChatData(d.id);
+              }
+              // notification complete করো
+              if (typeof window.fbCompleteNotificationByAppId === 'function') {
+                await window.fbCompleteNotificationByAppId(d.id, {
+                  appliedAmount: data.appliedAmount || 0,
+                  serviceName: data.serviceName || '',
+                  acceptedBy: data.acceptedBy || ''
+                });
+              }
+            } catch(_ce) { console.error('admin auto cleanup error:', _ce); }
+          }, 5000);
+        }
+      });
       callback(apps);
     }, (err) => {
       console.error("fbListenApplications error:", err);
@@ -13184,10 +13209,16 @@ function cpSearchApp() {
           return { id: m.id, from: m.from||"admin", text: m.text||null, isHtml: m.isHtml||false, time: m.timeStr||m.time||"এইমাত্র", file: m.file||null, paymentConfirmed: m.paymentConfirmed||false, adminOnly: m.adminOnly||false, readAt: m.readAt||null };
         });
         if (cpCurrentApp) {
+          const prevLen = (cpCurrentApp.messages || []).length;
           const stillUploading = (cpCurrentApp.messages || []).filter(m => m._optId && m.file && m.file._uploading);
           cpCurrentApp.messages = [...mapped, ...stillUploading];
           cpRenderMessages(cpCurrentApp.messages);
-          _cpScrollToBottom(false);
+          // নতুন মেসেজ এলে এবং user নিচে থাকলেই scroll করো
+          // isHtml কোটেশন/ডেলিভারি card render হলে scroll করো না — user নিজে scroll করবে
+          const hasNewMsg = mapped.length > prevLen;
+          if (hasNewMsg) {
+            _cpScrollToBottom(false);
+          }
           // ক্লায়েন্ট এই চ্যাট দেখছে — এডমিনের পাঠানো unread মেসেজ "পড়া" মার্ক করো
           if (typeof window.fbMarkMessagesRead === 'function') {
             window.fbMarkMessagesRead(docId, 'client', mapped);
@@ -13772,6 +13803,12 @@ function cpRenderMessages(msgs) {
     }
   });
 
+  // scroll position সংরক্ষণ করো — rebuild এর পরে restore করবো
+  // nearBottom হলে restore দরকার নেই (নিচে scroll হবে), উপরে থাকলে position ধরে রাখো
+  const scrollBefore = container.scrollTop;
+  const heightBefore = container.scrollHeight;
+  const nearBottom = (container.scrollHeight - container.scrollTop - container.clientHeight) < 80;
+
   container.innerHTML = '';
   if (!msgs || !msgs.length) {
     container.innerHTML = '<div style="text-align:center;padding:48px 20px;color:var(--gray);"><i class="fas fa-comment-dots" style="font-size:32px;display:block;margin-bottom:10px;opacity:0.3;"></i><div style="font-size:13px;">এখনো কোনো মেসেজ নেই।</div></div>';
@@ -13787,6 +13824,12 @@ function cpRenderMessages(msgs) {
     const row = _cpBuildMsgRow(m);
     container.appendChild(row);
   });
+
+  // scroll position restore: user উপরে ছিলে সেখানেই রাখো
+  if (!nearBottom) {
+    const heightAfter = container.scrollHeight;
+    container.scrollTop = scrollBefore + (heightAfter - heightBefore);
+  }
 }
 
 function _cpBuildMsgRow(m) {
@@ -13963,7 +14006,7 @@ function _cpBuildMsgRow(m) {
           deliveryCompletedAt: new Date().toISOString(),
           status: 3
         }).then(function(){
-          // ── listener বন্ধ করো আগে, তারপর chat data মুছো ──
+          // ── listener বন্ধ করো ──
           if (window._cpUnsubscribe) {
             try { window._cpUnsubscribe(); } catch(e) {}
             window._cpUnsubscribe = null;
@@ -13972,26 +14015,18 @@ function _cpBuildMsgRow(m) {
             try { window._cpStatusUnsub(); } catch(e) {}
             window._cpStatusUnsub = null;
           }
-          // ── আবেদনের আপডেট কনফার্ম হওয়ার পরই চ্যাট/নোটিফিকেশন ক্লিনআপ শুরু করো ──
-          if (typeof window.fbCompleteNotificationByAppId === 'function') {
-            window.fbCompleteNotificationByAppId(key, {
-              appliedAmount: _dfCharge,
-              serviceName:   _dfService,
-              acceptedBy:    _dfAdminId
-            }).catch(function(e){ console.error('auto-complete notification error:', e); });
+          // ── ক্লায়েন্ট পোর্টাল UI আপডেট করো — সম্পন্ন বার্তা দেখাও ──
+          // (messages delete করা হবে admin panel থেকে — client-এর delete permission নেই)
+          if (typeof cpCurrentApp !== 'undefined' && cpCurrentApp) {
+            cpCurrentApp.messages = [];
           }
-          if (typeof window.fbDeleteChatData === 'function') {
-            window.fbDeleteChatData(key).then(function() {
-              // ক্লায়েন্ট পোর্টাল UI আপডেট করো — ইনবক্স খালি দেখাও
-              if (typeof cpCurrentApp !== 'undefined' && cpCurrentApp) {
-                cpCurrentApp.messages = [];
-              }
-              const cpMsgs = document.getElementById('cpMessages');
-              if (cpMsgs) {
-                cpMsgs.innerHTML = '<div style="text-align:center;padding:40px 20px;color:#888;"><i class="fas fa-check-circle" style="font-size:32px;color:#22c55e;display:block;margin-bottom:10px;"></i><div style="font-size:13px;font-weight:600;">ডেলিভারি সম্পন্ন হয়েছে।<br>চ্যাট আর্কাইভ করা হয়েছে।</div></div>';
-              }
-            }).catch(function(e){ console.error('auto-delete chat data error:', e); });
+          const cpMsgs = document.getElementById('cpMessages');
+          if (cpMsgs) {
+            cpMsgs.innerHTML = '<div style="text-align:center;padding:40px 20px;color:#888;"><i class="fas fa-check-circle" style="font-size:32px;color:#22c55e;display:block;margin-bottom:10px;"></i><div style="font-size:13px;font-weight:600;">ডেলিভারি সম্পন্ন হয়েছে।<br>ধন্যবাদ আবেদনি ব্যবহার করার জন্য।</div></div>';
           }
+          // tracking portal lock করো
+          const cpTrackBtn = document.getElementById('cpTrackBtn');
+          if (cpTrackBtn) cpTrackBtn.style.display = 'none';
         }).catch(function(e){ console.error('dfSubmitForm firebase error:', e); });
       }
     } catch(e) { console.error('dfSubmitForm firebase error:', e); }
@@ -23234,7 +23269,11 @@ async function submitClientPaymentTrx(pqId) {
   const submitBtn   = boxEl ? boxEl.querySelector('button[onclick*="submitClientPaymentTrx"]') : null;
   if (!inputEl || !boxEl) return;
   // data-* থেকে ক্লায়েন্টের তথ্য নাও
-  const appId      = boxEl.dataset.appid || '';
+  // client portal-এ _activeChatAppId undefined থাকে, তাই fallback chain
+  const appId = boxEl.dataset.appid
+    || (typeof window._cpTrackingId !== 'undefined' && window._cpTrackingId)
+    || (typeof cpCurrentApp !== 'undefined' && cpCurrentApp && cpCurrentApp.id)
+    || '';
   const clientName = decodeURIComponent(boxEl.dataset.cname || '');
   const clientPhone= decodeURIComponent(boxEl.dataset.cphone || '');
   const svcName    = decodeURIComponent(boxEl.dataset.svc || '');
