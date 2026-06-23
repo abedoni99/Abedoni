@@ -13233,12 +13233,14 @@ function cpSearchApp() {
           if (hasNewMsg) {
             _cpScrollToBottom(false);
           }
-          // শুধু নতুন admin message এলে readAt set করো — পুরনো message-এ করলে onSnapshot loop হয়
-          const newAdminMsgs = mapped.filter(function(m) {
-            return m.from !== 'client' && !m.readAt && m.id && !prevIds.has(m.id);
+          // unread admin message — readAt set করো (loop এড়াতে _cpMarkedRead cache ব্যবহার করো)
+          if (!window._cpMarkedRead) window._cpMarkedRead = new Set();
+          const unreadAdminMsgs = mapped.filter(function(m) {
+            return m.from !== 'client' && !m.readAt && m.id && !window._cpMarkedRead.has(m.id);
           });
-          if (newAdminMsgs.length > 0 && typeof window.fbMarkMessagesRead === 'function') {
-            window.fbMarkMessagesRead(docId, 'client', newAdminMsgs);
+          if (unreadAdminMsgs.length > 0 && typeof window.fbMarkMessagesRead === 'function') {
+            unreadAdminMsgs.forEach(function(m) { window._cpMarkedRead.add(m.id); });
+            window.fbMarkMessagesRead(docId, 'client', unreadAdminMsgs);
           }
         }
       }, function(err) {
@@ -13936,6 +13938,36 @@ function _cpBuildMsgRow(m) {
       // HTML কার্ডের জন্য আলাদা class — pre-wrap বন্ধ ও padding/background সরানো
       const bubbleClass = isHtmlCard ? 'cp-msg-bubble cp-html-card' : 'cp-msg-bubble';
       div.innerHTML = `<div class="${bubbleClass}" style="${optStyle}">${safe}</div><span class="cp-msg-time">${m.time||''}${m.from === 'client' ? cpTickHtml(m) : ''}</span>`;
+      // ── isHtml card: onclick CSP সমস্যা এড়াতে event listener দিয়ে wire করো ──
+      if (isHtmlCard) {
+        // Star rating
+        div.querySelectorAll('[data-star]').forEach(function(star) {
+          star.addEventListener('click', function() {
+            const val = parseInt(star.getAttribute('data-star'));
+            const appId = (typeof window._cpTrackingId !== 'undefined' && window._cpTrackingId)
+              || (typeof cpCurrentApp !== 'undefined' && cpCurrentApp && cpCurrentApp.id) || 'x';
+            if (typeof window.dfSetStar === 'function') window.dfSetStar(star, appId, val);
+          });
+        });
+        // Submit button
+        const submitBtn = div.querySelector('[id^="dfSubmitBtn_"]');
+        if (submitBtn) {
+          submitBtn.addEventListener('click', function() {
+            const appId = (typeof window._cpTrackingId !== 'undefined' && window._cpTrackingId)
+              || (typeof cpCurrentApp !== 'undefined' && cpCurrentApp && cpCurrentApp.id) || 'x';
+            if (typeof window.dfSubmitForm === 'function') window.dfSubmitForm(appId);
+          });
+        }
+        // Payment submit button
+        const payBtn = div.querySelector('[id^="pqTrxBox_"] button, [onclick*="submitClientPaymentTrx"]');
+        if (payBtn) {
+          const origOnclick = payBtn.getAttribute('onclick');
+          if (origOnclick) {
+            payBtn.removeAttribute('onclick');
+            payBtn.addEventListener('click', function() { eval(origOnclick); });
+          }
+        }
+      }
     }
     if (_cpSelectMode && _cpSelected.has(m.id)) {
       const dot = document.createElement('div');
