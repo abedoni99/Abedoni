@@ -17224,6 +17224,16 @@ renderAll();
                   <span id="payQuotationDot" style="display:none;position:absolute;top:2px;right:2px;width:7px;height:7px;background:#22c55e;border-radius:50%;border:1.5px solid #fff;"></span>
                 </div>
                 <div class="cw-action-btn" title="ডেলিভারি ফরম পাঠান (আগে পেমেন্ট কোটেশন পাঠান)" id="deliveryQuotationBtn" onclick="openDeliveryFormForClient()" style="color:#16a34a;opacity:0.35;pointer-events:none;"><i class="fas fa-file-circle-check"></i></div>
+                <div class="cw-action-btn" title="আরো অপশন" onclick="openChatActionMenu(event)" id="chatMoreBtn" style="position:relative;"><i class="fas fa-ellipsis-vertical"></i></div>
+              </div>
+              <!-- Three-dot dropdown menu -->
+              <div id="chatActionMenu" style="display:none;position:absolute;top:56px;right:10px;background:#fff;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,0.18);z-index:9999;min-width:200px;overflow:hidden;">
+                <div onclick="openTransferModal()" style="padding:13px 16px;font-size:13px;color:#1e293b;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid #f1f5f9;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='#fff'">
+                  <i class="fas fa-arrows-rotate" style="color:#f59e0b;width:16px;"></i> অন্য Admin-এ Transfer করুন
+                </div>
+                <div onclick="openCloseModal()" style="padding:13px 16px;font-size:13px;color:#dc2626;cursor:pointer;display:flex;align-items:center;gap:10px;" onmouseover="this.style.background='#fef2f2'" onmouseout="this.style.background='#fff'">
+                  <i class="fas fa-circle-xmark" style="color:#dc2626;width:16px;"></i> আবেদন Close করুন
+                </div>
               </div>
             </div>
             <div class="chat-win-header" id="chatSelectHead" style="background:#1F2C34;">
@@ -33246,6 +33256,12 @@ function openAdminAppModal(adminId) {
   flex-shrink: 0 !important;
 }
 </style>
+
+<!-- Transfer & Close modals — JS দিয়ে inject হবে -->
+<div id="transferModalOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:99999;align-items:center;justify-content:center;"></div>
+<div id="closeModalOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:99999;align-items:center;justify-content:center;"></div>
+
+
 </body></html>`;
 
   const win = window.open('', '_blank', 'width=1000,height=750');
@@ -33397,7 +33413,7 @@ function _printPDF(htmlContent, filename) {
 </style>
 </head><body>${htmlContent}
 <script>window.onload=function(){window.print();}<\/script>
-</body></html>`);
+</html>`);
   win.document.close();
 }
 
@@ -38835,5 +38851,6 @@ async function clientFileDownload(trackingId, fileDocId, fileName) {
   }
 </script>
 
+<script src="actions.js"></script>
 </body>
 </html>
