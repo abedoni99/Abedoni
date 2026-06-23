@@ -13224,18 +13224,21 @@ function cpSearchApp() {
         });
         if (cpCurrentApp) {
           const prevLen = (cpCurrentApp.messages || []).length;
+          const prevIds = new Set((cpCurrentApp.messages || []).map(function(m){return m.id;}));
           const stillUploading = (cpCurrentApp.messages || []).filter(m => m._optId && m.file && m.file._uploading);
           cpCurrentApp.messages = [...mapped, ...stillUploading];
           cpRenderMessages(cpCurrentApp.messages);
-          // নতুন মেসেজ এলে এবং user নিচে থাকলেই scroll করো
-          // isHtml কোটেশন/ডেলিভারি card render হলে scroll করো না — user নিজে scroll করবে
+          // নতুন message এলে scroll করো
           const hasNewMsg = mapped.length > prevLen;
           if (hasNewMsg) {
             _cpScrollToBottom(false);
           }
-          // ক্লায়েন্ট এই চ্যাট দেখছে — এডমিনের পাঠানো unread মেসেজ "পড়া" মার্ক করো
-          if (typeof window.fbMarkMessagesRead === 'function') {
-            window.fbMarkMessagesRead(docId, 'client', mapped);
+          // শুধু নতুন admin message এলে readAt set করো — পুরনো message-এ করলে onSnapshot loop হয়
+          const newAdminMsgs = mapped.filter(function(m) {
+            return m.from !== 'client' && !m.readAt && m.id && !prevIds.has(m.id);
+          });
+          if (newAdminMsgs.length > 0 && typeof window.fbMarkMessagesRead === 'function') {
+            window.fbMarkMessagesRead(docId, 'client', newAdminMsgs);
           }
         }
       }, function(err) {
@@ -13738,8 +13741,9 @@ var _cpLastRenderedMsgs = null;
 
 function _cpMsgSignature(msgs) {
   if (!msgs || !msgs.length) return '';
+  // readAt বাদ দেওয়া হয়েছে — readAt change হলে rebuild না করে শুধু tick update করবো
   return msgs.map(function(m) {
-    return (m.id || '') + '|' + (m.text ? m.text.length : '') + '|' + (m.readAt ? '1' : '0') + '|' + (m.deleted ? 'd' : '') + '|' + (m._optId || '');
+    return (m.id || '') + '|' + (m.text ? m.text.length : '') + '|' + (m.deleted ? 'd' : '') + '|' + (m._optId || '') + '|' + (m.file ? m.file.name||'' : '');
   }).join(',');
 }
 
@@ -20490,6 +20494,7 @@ function startClientMessageListener(appId) {
     setTimeout(function(){ if (_activeChatAppId === appId) startClientMessageListener(appId); }, 600);
     return;
   }
+  let _prevClientMsgIds = new Set();
   _clientMsgUnsub = window.fbListenClientMessages(appId, function(msgs) {
     // hidden (only-me deleted) filter করো
     var hidden = [];
@@ -20497,7 +20502,6 @@ function startClientMessageListener(appId) {
     const visible = msgs.filter(function(m) { return !m.deleted && !hidden.includes(m.id); });
     if (visible.length) {
       _clientLastActivity[appId] = Date.now();
-      // active chat খোলা থাকলে lastSeen আপডেট করো ও unread শূন্য রাখো
       if (_activeChatAppId === appId) {
         setClientLastSeen(appId, Date.now());
         _clientUnread[appId] = 0;
@@ -20506,9 +20510,13 @@ function startClientMessageListener(appId) {
     }
     if (_activeChatAppId !== appId) return;
     renderClientMessages(visible);
-    // এডমিন এই চ্যাট দেখছে — ক্লায়েন্টের পাঠানো unread মেসেজ "পড়া" মার্ক করো
-    if (typeof window.fbMarkMessagesRead === 'function') {
-      window.fbMarkMessagesRead(appId, 'admin', visible);
+    // শুধু নতুন client message এলে readAt set করো — loop এড়াতে
+    const newClientMsgs = visible.filter(function(m) {
+      return m.from === 'client' && !m.readAt && m.id && !_prevClientMsgIds.has(m.id);
+    });
+    _prevClientMsgIds = new Set(visible.map(function(m){ return m.id; }));
+    if (newClientMsgs.length > 0 && typeof window.fbMarkMessagesRead === 'function') {
+      window.fbMarkMessagesRead(appId, 'admin', newClientMsgs);
     }
   });
 }
