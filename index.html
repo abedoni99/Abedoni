@@ -634,7 +634,7 @@
       const msgs = snap.docs
         .map(d => ({ id: d.id, ...d.data() }))
         .filter(data => !data.clientOnly)
-        .filter(data => !data.adminOnly)  // ট্রান্সফারের পর হাইড করা মেসেজ নতুন এডমিনও দেখবে না
+        .filter(data => !data.adminOnly)
         .map(data => {
         return {
           id: data.id,
@@ -39178,36 +39178,29 @@ async function clientFileDownload(trackingId, fileDocId, fileName) {
         }
       } catch(ne) { console.error('notif update error:', ne); }
       // ── ট্রান্সফারের পর চ্যাট হাইড + অটো ওয়েলকাম মেসেজ রিস্টোর ──
-      // NOTE: Firestore rules-এ সাধারণ admin messages deleteDoc করতে পারে না
-      // (delete: if isSuperAdmin() || isOwnCompletedApp) — তাই updateDoc দিয়ে
-      // adminOnly:true সেট করা হচ্ছে। ক্লায়েন্ট সাইড !m.adminOnly ফিল্টার করে,
-      // তাই ক্লায়েন্টের কাছে ওয়েলকাম ছাড়া আর কোনো মেসেজ দেখাবে না।
+      // Firestore Rules: messages delete শুধু isSuperAdmin()/isOwnCompletedApp() পারে।
+      // কিন্তু messages update-এ adminOnly field এডমিন সেট করতে পারে (Rules-এ যোগ করা হয়েছে)।
+      // ক্লায়েন্ট ও নতুন এডমিন উভয়ই adminOnly:true মেসেজ ফিল্টার করে।
       (function(_aid) {
         setTimeout(async function() {
           try {
             var _m = window._fbModules, _d = window._db;
             if (!_m || !_d || !_aid) return;
-            // সব বিদ্যমান messages-এ adminOnly:true সেট করো
-            // (delete permission নেই, কিন্তু update permission আছে isAdmin()-এর)
+            // সব বিদ্যমান messages adminOnly:true করো (ক্লায়েন্ট ও নতুন এডমিন দেখবে না)
             var _msgSnap = await _m.getDocs(_m.collection(_d, 'applications', _aid, 'messages'));
             var _hideP = [];
             _msgSnap.forEach(function(msg) {
               _hideP.push(
-                _m.updateDoc(_m.doc(_d, 'applications', _aid, 'messages', msg.id), {
-                  adminOnly: true
-                }).catch(function(e) {
-                  // update-ও fail হলে (very unlikely) console-এ লগ করো
-                  console.warn('transfer hide msg error:', msg.id, e.code || e.message);
-                })
+                _m.updateDoc(_m.doc(_d, 'applications', _aid, 'messages', msg.id), { adminOnly: true })
+                  .catch(function(e) { console.warn('transfer hide msg:', msg.id, e.code||e.message); })
               );
             });
             await Promise.all(_hideP);
-            // অটো ওয়েলকাম মেসেজ নতুন করে পাঠাও (adminOnly ছাড়া — ক্লায়েন্ট দেখবে)
+            // অটো ওয়েলকাম মেসেজ নতুন করে পাঠাও (adminOnly:false — ক্লায়েন্ট দেখবে)
             var _wt = (typeof AUTO_WELCOME_MSG !== 'undefined') ? AUTO_WELCOME_MSG : '';
             if (_wt) {
               await _m.addDoc(_m.collection(_d, 'applications', _aid, 'messages'), {
-                from: 'admin', text: _wt, isHtml: false,
-                adminOnly: false,
+                from: 'admin', text: _wt, isHtml: false, adminOnly: false,
                 time: 'এইমাত্র', timeStr: 'এইমাত্র', createdAt: _m.serverTimestamp()
               });
             }
