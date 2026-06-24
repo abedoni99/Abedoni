@@ -121,34 +121,9 @@
   };
 
   // ── এডমিন প্যানেলে সব আবেদন রিয়েলটাইম ──
-  // admin-side auto cleanup: deliveryCompleted হলে chat archive + delete করো
-  const _adminCleanupDone = new Set();
   window.fbListenApplications = function(callback) {
     return onSnapshot(collection(db, "applications"), (snap) => {
       const apps = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      // ── auto cleanup: deliveryCompleted = true হলে admin থেকে delete করো ──
-      snap.docs.forEach(d => {
-        const data = d.data();
-        if (data.deliveryCompleted && !_adminCleanupDone.has(d.id)) {
-          _adminCleanupDone.add(d.id);
-          // ৫ সেকেন্ড পরে cleanup করো যাতে client-side UI update হওয়ার সময় পায়
-          setTimeout(async () => {
-            try {
-              if (typeof window.fbDeleteChatData === 'function') {
-                await window.fbDeleteChatData(d.id);
-              }
-              // notification complete করো
-              if (typeof window.fbCompleteNotificationByAppId === 'function') {
-                await window.fbCompleteNotificationByAppId(d.id, {
-                  appliedAmount: data.appliedAmount || 0,
-                  serviceName: data.serviceName || '',
-                  acceptedBy: data.acceptedBy || ''
-                });
-              }
-            } catch(_ce) { console.error('admin auto cleanup error:', _ce); }
-          }, 5000);
-        }
-      });
       callback(apps);
     }, (err) => {
       console.error("fbListenApplications error:", err);
@@ -39132,19 +39107,14 @@ async function clientFileDownload(trackingId, fileDocId, fileName) {
         timeStr: new Date().toLocaleTimeString('bn-BD', {hour:'2-digit',minute:'2-digit'}),
         createdAt: mods.serverTimestamp()
       });
+      // local list থেকে আগেই সরাও — Firebase update loop এড়াতে
+      if (typeof _acceptedChats !== 'undefined') {
+        _acceptedChats = _acceptedChats.filter(function(c){ return (c.appId || c.id) !== appId; });
+        if (typeof renderAcceptedChatList === 'function') renderAcceptedChatList();
+      }
+      if (!window._transferDone) window._transferDone = new Set();
+      window._transferDone.add(appId);
       await mods.updateDoc(mods.doc(db, 'applications', appId), { acceptedBy: null, status: -1 });
-      // app_notifications এও acceptedBy null করো — chat list থেকে সরাতে
-      try {
-        var nSnap = await mods.getDocs(mods.query(mods.collection(db, 'app_notifications'), mods.where('appId', '==', appId)));
-        nSnap.forEach(async function(nd) {
-          await mods.updateDoc(mods.doc(db, 'app_notifications', nd.id), { acceptedBy: null, completed: false });
-        });
-        // local list থেকেও সরাও
-        if (typeof _acceptedChats !== 'undefined') {
-          _acceptedChats = _acceptedChats.filter(function(c){ return (c.appId || c.id) !== appId; });
-          if (typeof renderAcceptedChatList === 'function') renderAcceptedChatList();
-        }
-      } catch(ne) { console.error('notif update error:', ne); }
       window.closeTransferModal();
       if (typeof chatBackToList === 'function') chatBackToList();
       if (typeof showToast === 'function') showToast('Transfer সম্পন্ন', 'আবেদনটি pool-এ ফিরে গেছে।', 'success');
