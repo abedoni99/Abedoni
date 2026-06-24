@@ -729,8 +729,16 @@
     try {
       const cred = await signInWithEmailAndPassword(auth, email, password);
       const adminSnap = await getDoc(doc(db, "admin", cred.user.uid));
-      if (adminSnap.exists()) return { id: cred.user.uid, ...adminSnap.data() };
-      return null;
+      if (!adminSnap.exists()) { await signOut(auth); return null; }
+      const data = adminSnap.data();
+      // disabled এডমিন লগইন করতে পারবে না
+      if (data.disabled === true) {
+        await signOut(auth);
+        const err = new Error('এই অ্যাকাউন্টটি নিষ্ক্রিয় করা হয়েছে।');
+        err.code = 'auth/account-disabled';
+        throw err;
+      }
+      return { id: cred.user.uid, ...data };
     } catch(e) {
       console.error("fbAdminLogin error:", e);
       throw e;
@@ -30308,6 +30316,11 @@ function adminConfirmedLogout() {
    Called from main site navbar
 ================================ */
 function openSuperAdminPanel() {
+  // ?debug=1 বা যেকোনো URL param থাকলেও session reset করো — bypass হবে না
+  if (new URLSearchParams(window.location.search).has('debug')) {
+    _sessionToken = null; // in-memory token মুছে দাও
+    sessionStorage.removeItem('abedoni_sess_v1');
+  }
   const wrapper = document.getElementById('superAdminWrapper');
   if (!wrapper) return;
   // body-র direct child হিসেবে move করো — যাতে কোনো parent transform/filter position:fixed নষ্ট না করে
@@ -30847,7 +30860,12 @@ function saDoLogin() {
         loginAttempts = 0;
         err.textContent = 'অনেকবার ভুল হয়েছে। ৩০ সেকেন্ড অপেক্ষা করুন।';
       } else {
+        if (e && e.code === 'auth/account-disabled') {
+        err.textContent = 'এই অ্যাকাউন্টটি নিষ্ক্রিয় করা হয়েছে। সুপার এডমিনের সাথে যোগাযোগ করুন।';
+        loginAttempts = 0;
+      } else {
         err.textContent = `অ্যাক্সেস নেই বা ইমেইল/পাসওয়ার্ড ভুল। (${5 - loginAttempts}টি চেষ্টা বাকি)`;
+      }
       }
       err.classList.add('show');
       /* Firebase থেকে logout করো — partial login state পরিষ্কার */
@@ -30884,13 +30902,17 @@ function saDoLogin() {
   }).catch(function(e) {
     if(btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-right-to-bracket"></i> প্রবেশ করুন'; }
     document.getElementById('saLoginPin').value = '';
-    loginAttempts++;
-    if (loginAttempts >= 5) {
-      loginLockUntil = Date.now() + 30000;
-      loginAttempts = 0;
-      err.textContent = 'অনেকবার ভুল হয়েছে। ৩০ সেকেন্ড অপেক্ষা করুন।';
+    if (e && e.code === 'auth/account-disabled') {
+      err.textContent = 'এই অ্যাকাউন্টটি নিষ্ক্রিয় করা হয়েছে। সুপার এডমিনের সাথে যোগাযোগ করুন।';
     } else {
-      err.textContent = `ইমেইল বা পাসওয়ার্ড ভুল। (${5 - loginAttempts}টি চেষ্টা বাকি)`;
+      loginAttempts++;
+      if (loginAttempts >= 5) {
+        loginLockUntil = Date.now() + 30000;
+        loginAttempts = 0;
+        err.textContent = 'অনেকবার ভুল হয়েছে। ৩০ সেকেন্ড অপেক্ষা করুন।';
+      } else {
+        err.textContent = `ইমেইল বা পাসওয়ার্ড ভুল। (${5 - loginAttempts}টি চেষ্টা বাকি)`;
+      }
     }
     err.classList.add('show');
   });
@@ -31497,7 +31519,7 @@ window.renderRecentActivity = renderRecentActivity;
 function renderAdminTable(filter='') {
   const tb = document.getElementById('adminTableBody');
   if (!tb) return;
-  const list = filter ? state.admins.filter(a=>(a.name||'').includes(filter)||(a.code||'').includes(filter)||(a.area||'').includes(filter)) : state.admins;
+  const list = (filter ? state.admins.filter(a=>(a.name||'').includes(filter)||(a.code||'').includes(filter)||(a.area||'').includes(filter)) : state.admins).filter(a => a.role !== 'super-admin');
   tb.innerHTML = list.map((a,i) => `
     <tr>
       <td style="color:var(--gray);font-size:12px;">${i+1}</td>
@@ -31704,7 +31726,17 @@ document.addEventListener('click', function(e) {
 
 function toggleAdminStatus(id) {
   const a = state.admins.find(x=>String(x.id)===String(id));
-  if(a){ a.status = a.status==='active'?'inactive':'active'; renderAdminTable(); updateStats(); lsSave(); toast(a.name+' — অবস্থা পরিবর্তন হয়েছে','info'); }
+  if (!a) return;
+  if (a.role === 'super-admin') { toast('সুপার এডমিনের অবস্থা পরিবর্তন করা যাবে না', 'error'); return; }
+  const newDisabled = !(a.disabled === true);
+  a.disabled = newDisabled;
+  a.status = newDisabled ? 'inactive' : 'active';
+  renderAdminTable(); updateStats(); lsSave();
+  // Firestore-এ disabled flag সেট করো — login block হবে
+  if (typeof window.fbUpdateAdmin === 'function') {
+    window.fbUpdateAdmin(String(id), { disabled: newDisabled }).catch(function(e){ console.error('toggleAdminStatus fbUpdateAdmin error:', e); });
+  }
+  toast(a.name + ' — ' + (newDisabled ? 'কার্যক্রম বন্ধ করা হয়েছে' : 'কার্যক্রম চালু করা হয়েছে'), newDisabled ? 'error' : 'success');
 }
 
 var _deletedAdminIds = [];
@@ -31713,7 +31745,10 @@ var _deletedComplaintIds = [];
 function removeAdmin(id) {
   id = String(id);
   if (window.currentAdminRole !== 'super-admin') { showToast('অনুমতি নেই', 'এই কাজ শুধুমাত্র Super Admin করতে পারবেন।', 'error'); return; }
-  if(!confirm('এই এডমিনকে সরিয়ে দিতে চান?')) return;
+  const _adminToDelete = state.admins.find(a => String(a.id) === id);
+  if (_adminToDelete && _adminToDelete.role === 'super-admin') { toast('সুপার এডমিনকে ডিলিট করা যাবে না।', 'error'); return; }
+  const _confirmName = _adminToDelete ? _adminToDelete.name : 'এই এডমিন';
+  if(!confirm(_confirmName + '-কে স্থায়ীভাবে ডিলিট করতে চান?\n\nএই ইমেইল/পাসওয়ার্ড আর কাজ করবে না।')) return;
 
   const admin = state.admins.find(a => String(a.id) === String(id));
 
@@ -31738,8 +31773,12 @@ function removeAdmin(id) {
   renderAdminTable(); updateStats(); renderTracker();
   lsSave();
 
-  // Firestore থেকেও মুছে দাও
+  // Firestore থেকেও মুছে দাও + disabled flag (login block)
   try {
+    if (typeof window.fbUpdateAdmin === 'function') {
+      // আগে disabled:true করো — এতে Firestore doc থাকলেও login হবে না
+      window.fbUpdateAdmin(id, { disabled: true }).catch(function(){});
+    }
     if (typeof window.fbDeleteAdmin === 'function') {
       window.fbDeleteAdmin(id).then(function(ok) {
         if (!ok) toast('সতর্কতা: ক্লাউড থেকে মুছা যায়নি, ইন্টারনেট চেক করুন', 'error');
@@ -31747,7 +31786,7 @@ function removeAdmin(id) {
     }
   } catch(e) { console.error('fbDeleteAdmin call failed:', e); }
 
-  toast('এডমিন সরানো হয়েছে','error');
+  toast('এডমিন স্থায়ীভাবে ডিলিট হয়েছে। ইমেইল/পাসওয়ার্ড আর কাজ করবে না।','error');
 }
 
 function openAddAdmin() {
