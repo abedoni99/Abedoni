@@ -31554,10 +31554,11 @@ function updateDashDate() {
 }
 
 function updateStats() {
-  const active = state.admins.filter(a=>a.disabled!==true && a.role!=='super-admin').length;
-  const rev = state.admins.reduce((s,a)=>s+a.revenue,0);
+  const _normalAdmins = state.admins.filter(a=>a.role!=='super-admin');
+  const active = _normalAdmins.filter(a=>a.disabled!==true).length;
+  const rev = _normalAdmins.reduce((s,a)=>s+a.revenue,0);
   const pend = state.complaints.filter(c=>c.status==='pending').length;
-  animateNum('statAdmins', state.admins.length);
+  animateNum('statAdmins', _normalAdmins.length);
   animateNum('statActive', active);
   document.getElementById('statRevenue').textContent = '৳'+rev.toLocaleString('bn-BD');
   animateNum('statComplaints', pend);
@@ -32366,7 +32367,7 @@ async function syncAllAdminStats(btn) {
 function renderTracker() {
   const g = document.getElementById('trackerGrid');
   if(!g) return;
-  g.innerHTML = state.admins.map(a => {
+  g.innerHTML = state.admins.filter(a=>a.role!=='super-admin').map(a => {
     const tasks   = a.tasks   || 0;
     const done    = a.done    || 0;
     const revenue = a.revenue || 0;
@@ -32575,7 +32576,7 @@ function ltSwitchTab(tab, btn) {
     if (typeof _startAdminsFbSync === 'function') _startAdminsFbSync();
     ltRenderAdminList();
     // সব admins-এর client chat listener চালু করো
-    (state.admins || []).forEach(function(a) { _ltStartClientChatListener(String(a.id)); });
+    (state.admins || []).filter(a=>a.role!=='super-admin').forEach(function(a) { _ltStartClientChatListener(String(a.id)); });
   }
 }
 
@@ -32586,7 +32587,7 @@ function ltRenderAdminList(filter='') {
   const flaggedIds = _ltGetFlaggedAdmins();
 
   el.innerHTML = state.admins
-    .filter(a => !q || a.name.toLowerCase().includes(q) || a.code.toLowerCase().includes(q))
+    .filter(a => a.role!=='super-admin' && (!q || a.name.toLowerCase().includes(q) || a.code.toLowerCase().includes(q)))
     .map(a => {
       const flagged = flaggedIds.includes(a.id);
       const colors = ['#1B3A8C','#2F6B4F','#7B2FBE','#C0392B'];
@@ -32614,7 +32615,7 @@ function ltFilterAdmins(q) { ltRenderAdminList(q); }
 
 /* কোন এডমিনের চ্যাটে সন্দেহজনক কথা আছে */
 function _ltGetFlaggedAdmins() {
-  return state.admins.filter(a => {
+  return state.admins.filter(a => a.role!=='super-admin').filter(a => {
     const all = [
       ...((p3state.chatMessages && p3state.chatMessages[a.id]) || []),
       ...(LT_CLIENT_CHATS[a.id] || []),
@@ -33047,7 +33048,7 @@ function renderMonthly() {
   }
 
   let totSC=0, totAdm=0, totComp=0;
-  tb.innerHTML = state.admins.map((a,i) => {
+  tb.innerHTML = state.admins.filter(a=>a.role!=='super-admin').map((a,i) => {
     /* এই এডমিনের আবেদনগুলো — মাস/বছর অনুযায়ী ফিল্টার */
     const apps = (state.applications || []).filter(ap => String(ap.adminId) === String(a.id) && appMatchesMonth(ap));
     const totalFee = apps.reduce((s,ap) => s + (ap.appliedAmount||0), 0);
@@ -33536,7 +33537,7 @@ function openAddAppModal() {
   /* এডমিন ড্রপডাউন পূরণ করো */
   const sel = document.getElementById('appAdminSel');
   if (sel) {
-    sel.innerHTML = state.admins.map(a => `<option value="${a.id}">${escHtml(a.name)} (${escHtml(a.code)})</option>`).join('');
+    sel.innerHTML = state.admins.filter(a=>a.role!=='super-admin').map(a => `<option value="${a.id}">${escHtml(a.name)} (${escHtml(a.code)})</option>`).join('');
   }
   /* আজকের তারিখ ও সময় */
   const now = new Date();
@@ -33710,7 +33711,7 @@ function downloadMonthlyPDF() {
   }
 
   let totFee=0, totSC=0, totAdm=0, totComp=0;
-  const rowsHTML = state.admins.map((a, i) => {
+  const rowsHTML = state.admins.filter(a=>a.role!=='super-admin').map((a, i) => {
     /* মাস অনুযায়ী ফিল্টার করা আবেদন */
     const apps = (state.applications || []).filter(ap => String(ap.adminId) === String(a.id) && appMatchesPdf(ap));
     const fee  = apps.reduce((s,ap) => s+(ap.appliedAmount||0), 0);
@@ -33743,7 +33744,7 @@ function downloadMonthlyPDF() {
     কোম্পানি: <strong>${compPct}%</strong> &nbsp;|&nbsp; এডমিন: <strong>${admPct}%</strong>
   </div>
   <div class="summary-grid">
-    <div class="summary-card"><div class="summary-val">${state.admins.length}</div><div class="summary-label">মোট এডমিন</div></div>
+    <div class="summary-card"><div class="summary-val">${state.admins.filter(a=>a.role!=='super-admin').length}</div><div class="summary-label">মোট এডমিন</div></div>
     <div class="summary-card"><div class="summary-val gold">৳${totFee.toLocaleString()}</div><div class="summary-label">মোট সার্ভিস চার্জ</div></div>
     <div class="summary-card"><div class="summary-val">৳${totSC.toLocaleString()}</div><div class="summary-label">মোট বিকাশ খরচ</div></div>
     <div class="summary-card"><div class="summary-val green">৳${totAdm.toLocaleString()}</div><div class="summary-label">এডমিনদের মোট প্রাপ্তি</div></div>
@@ -34408,7 +34409,7 @@ function renderChatContacts() {
   if (!el) return;
   // Super admin নিজেকে list থেকে বাদ দাও
   const _myUid = (typeof currentAdmin !== 'undefined' && currentAdmin) ? String(currentAdmin.id) : null;
-  const _contacts = state.admins.filter(a => !_myUid || String(a.id) !== _myUid);
+  const _contacts = state.admins.filter(a => a.role!=='super-admin' && (!_myUid || String(a.id) !== _myUid));
   el.innerHTML = _contacts.map(a => `
     <div onclick="selectChatAdmin(${a.id})" style="display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;transition:var(--transition);border-bottom:1px solid var(--gray-light);" onmouseover="this.style.background='var(--off-white)'" onmouseout="this.style.background='${state.currentChatAdmin===a.id?'rgba(10,36,99,0.06)':'transparent'}'">
       <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--primary-light),var(--primary));display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#fff;flex-shrink:0;">${a.name.charAt(0)}</div>
