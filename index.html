@@ -24332,9 +24332,12 @@ function adminConfirmedLogout() {
   color: rgba(255,255,255,0.65); margin-bottom: 8px; letter-spacing: 0.3px;
 }
 #superAdminWrapper .login-input-wrap { position: relative; }
-#superAdminWrapper .login-input-wrap i {
+#superAdminWrapper .login-input-wrap > i {
   position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
   color: var(--gray); font-size: 15px; pointer-events: none;
+}
+#superAdminWrapper .login-input-wrap .eye-btn i {
+  position: static; transform: none; color: inherit; font-size: 15px;
 }
 #superAdminWrapper .login-input-wrap input {
   width: 100%; padding: 13px 14px 13px 42px;
@@ -30705,6 +30708,9 @@ function _startAdminsFbSync() {
               /* UID সবসময় string রাখো — Number() করলে Firebase UID নষ্ট হয় */
               const mergedId = String(fa.id);
               const merged = Object.assign({ id: mergedId }, fa);
+              // disabled field সবসময় Firestore থেকে নাও
+              merged.disabled = fa.disabled === true;
+              merged.status = merged.disabled ? 'inactive' : 'active';
               if (idx === -1) state.admins.push(merged);
               else state.admins[idx] = Object.assign({}, state.admins[idx], merged);
 
@@ -31440,7 +31446,7 @@ function updateDashDate() {
 }
 
 function updateStats() {
-  const active = state.admins.filter(a=>a.status==='active').length;
+  const active = state.admins.filter(a=>a.disabled!==true && a.role!=='super-admin').length;
   const rev = state.admins.reduce((s,a)=>s+a.revenue,0);
   const pend = state.complaints.filter(c=>c.status==='pending').length;
   animateNum('statAdmins', state.admins.length);
@@ -31585,14 +31591,14 @@ function renderAdminTable(filter='') {
           <span class="live-dot ${a.online?'on':'off'}" style="margin-left:6px;"></span>
         </div>
       </td>
-      <td><span class="badge ${a.status==='active'?'badge-active':'badge-inactive'}">${a.status==='active'?'সক্রিয়':'নিষ্ক্রিয়'}</span></td>
+      <td><span class="badge ${a.disabled===true?'badge-inactive':'badge-active'}">${a.disabled===true?'নিষ্ক্রিয়':'সক্রিয়'}</span></td>
       <td>
         <div style="display:flex;gap:6px;">
           <button class="btn btn-ghost btn-sm" onclick="viewAdminProfile('${a.id}')" title="প্রোফাইল দেখুন" style="color:#0A2463;">
             <i class="fas fa-address-card"></i>
           </button>
-          <button class="btn btn-ghost btn-sm" onclick="toggleAdminStatus('${a.id}')" title="${a.status==='active'?'নিষ্ক্রিয় করুন':'সক্রিয় করুন'}">
-            <i class="fas ${a.status==='active'?'fa-user-slash':'fa-user-check'}"></i>
+          <button class="btn btn-ghost btn-sm" onclick="toggleAdminStatus('${a.id}')" title="${a.disabled===true?'সক্রিয় করুন':'নিষ্ক্রিয় করুন'}">
+            <i class="fas ${a.disabled===true?'fa-user-check':'fa-user-slash'}"></i>
           </button>
           <button class="btn btn-danger btn-sm" onclick="removeAdmin('${a.id}')">
             <i class="fas fa-trash"></i>
