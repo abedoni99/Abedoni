@@ -39179,8 +39179,31 @@ async function clientFileDownload(trackingId, fileDocId, fileName) {
       // ── ট্রান্সফারের পর চ্যাট মেসেজ মুছো — নতুন এডমিন পরিষ্কার চ্যাট পাবে ──
       setTimeout(async function() {
         try {
-          if (typeof window.fbDeleteChatData === 'function') await window.fbDeleteChatData(appId);
-        } catch(eD) { console.error('transfer chat delete error:', eD); }
+          var _mods2 = window._fbModules, _db2 = window._db;
+          // সব messages delete করো
+          var _msgSnap = await _mods2.getDocs(_mods2.collection(_db2, 'applications', appId, 'messages'));
+          var _delP = [];
+          _msgSnap.forEach(function(m){ _delP.push(_mods2.deleteDoc(_mods2.doc(_db2, 'applications', appId, 'messages', m.id))); });
+          await Promise.all(_delP);
+          // files ও chunks delete করো
+          try {
+            var _fSnap = await _mods2.getDocs(_mods2.collection(_db2, 'applications', appId, 'files'));
+            for (var _fi of _fSnap.docs) {
+              var _cSnap = await _mods2.getDocs(_mods2.collection(_db2, 'applications', appId, 'files', _fi.id, 'chunks'));
+              var _cP = []; _cSnap.forEach(function(c){ _cP.push(_mods2.deleteDoc(_mods2.doc(_db2, 'applications', appId, 'files', _fi.id, 'chunks', c.id))); });
+              await Promise.all(_cP);
+              await _mods2.deleteDoc(_mods2.doc(_db2, 'applications', appId, 'files', _fi.id));
+            }
+          } catch(_eF) { console.error('transfer file delete error:', _eF); }
+          // অটো ওয়েলকাম মেসেজ আবার পাঠাও
+          var _wt = (typeof AUTO_WELCOME_MSG !== 'undefined') ? AUTO_WELCOME_MSG : '';
+          if (_wt) {
+            await _mods2.addDoc(_mods2.collection(_db2, 'applications', appId, 'messages'), {
+              from: 'admin', text: _wt, isHtml: false,
+              time: 'এইমাত্র', timeStr: 'এইমাত্র', createdAt: _mods2.serverTimestamp()
+            });
+          }
+        } catch(eD) { console.error('transfer chat reset error:', eD); }
       }, 2000);
       window.closeTransferModal();
       if (typeof chatBackToList === 'function') chatBackToList();
