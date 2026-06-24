@@ -5088,7 +5088,7 @@
 #adminModalOverlay .msg-wrap.mine .msg-time {
   color: #667781;
 }
-#adminModalOverlay .msg-wrap.mine .msg-time .tick { color: #8696A0; font-size: 13px; }
+#adminModalOverlay .msg-wrap.mine .msg-time .tick { color: inherit; font-size: 13px; }
 #adminModalOverlay .msg-wrap.mine .msg-time .tick.read { color: #53BDEB; }
 /* ════════════════════════════════════════
    ADMIN PANEL — chat-msg-row / chat-bubble
@@ -10379,9 +10379,9 @@
 .cp-msg.client .cp-msg-time {
   color: #667781;
 }
-/* Double tick (read receipt) — ডিফল্ট ধূসর (পাঠানো হয়েছে), .read হলে নীল (পড়া হয়েছে) */
+/* Double tick (read receipt) — ডিফল্ট কালার নেই (পাঠানো হয়েছে), .read হলে নীল (পড়া হয়েছে) */
 .cp-msg.client .cp-msg-time .tick {
-  color: #8696A0;
+  color: inherit;
   font-size: 13px;
 }
 .cp-msg.client .cp-msg-time .tick.read {
@@ -11455,7 +11455,7 @@
   display: flex !important; align-items: center !important; gap: 3px !important;
 }
 #adminModalOverlay .msg-wrap.mine .msg-time { color: var(--wa-meta) !important; }
-#adminModalOverlay .msg-wrap.mine .msg-time .tick { color: #8696A0 !important; font-size: 13px !important; }
+#adminModalOverlay .msg-wrap.mine .msg-time .tick { color: inherit !important; font-size: 13px !important; }
 #adminModalOverlay .msg-wrap.mine .msg-time .tick.read { color: #53BDEB !important; }
 
 /* SA Contact special styling */
@@ -13765,14 +13765,14 @@ function _cpScrollToBottom(force) {
   });
 }
 
-/* হোয়াটসঅ্যাপ-স্টাইল ডবল-টিক HTML — শুধু নিজের পাঠানো মেসেজে দেখানো হয়।
-   readAt থাকলে নীল (পড়া হয়েছে), না থাকলে ধূসর (পাঠানো হয়েছে, এখনো পড়া হয়নি) */
+/* হোয়াটসঅ্যাপ-স্টাইল টিক HTML — শুধু নিজের পাঠানো মেসেজে দেখানো হয়।
+   readAt থাকলে নীল ডাবল-টিক (পড়া হয়েছে), না থাকলে সিঙ্গেল টিক কোনো কালার নেই (পাঠানো হয়েছে) */
 function cpTickHtml(m) {
-  // readAt আছে = admin দেখেছে = blue double tick
-  // readAt নেই = পাঠানো হয়েছে কিন্তু দেখেনি = grey single tick
+  // readAt আছে = অপর পক্ষ দেখেছে = blue double tick
+  // readAt নেই = পাঠানো হয়েছে কিন্তু দেখেনি = single tick no color
   return m.readAt
     ? ' <i class="fas fa-check-double tick read" style="color:#53BDEB;"></i>'
-    : ' <i class="fas fa-check tick" style="color:#8696A0;"></i>';
+    : ' <i class="fas fa-check tick"></i>';
 }
 
 // ── cpRenderMessages cache: শেষবার render করা msgs এখানে রাখা হয় ──
@@ -13814,7 +13814,7 @@ function cpRenderMessages(msgs) {
           if (prevM && prevM.readAt !== m.readAt) {
             const newTick = m.readAt
               ? '<i class="fas fa-check-double" style="font-size:9px;color:#53BDEB;margin-left:2px;"></i>'
-              : '<i class="fas fa-check-double" style="font-size:9px;color:#8696A0;margin-left:2px;"></i>';
+              : '<i class="fas fa-check" style="font-size:9px;margin-left:2px;"></i>';
             tickEl.innerHTML = (m.time || '') + newTick;
           }
         }
@@ -13848,7 +13848,7 @@ function cpRenderMessages(msgs) {
       if (tickEl && m.from === 'client') {
         const newTick = m.readAt
           ? '<i class="fas fa-check-double" style="font-size:9px;color:#53BDEB;margin-left:2px;"></i>'
-          : '<i class="fas fa-check-double" style="font-size:9px;color:#8696A0;margin-left:2px;"></i>';
+          : '<i class="fas fa-check" style="font-size:9px;margin-left:2px;"></i>';
         tickEl.innerHTML = (m.time || '') + newTick;
       }
     });
@@ -20893,7 +20893,7 @@ function renderClientMessages(msgs) {
         if (timeEl && m.from === 'admin') {
           const tickHtml = m.readAt
             ? '<i class="fas fa-check-double" style="font-size:9px;color:#53BDEB;margin-left:2px;"></i>'
-            : '<i class="fas fa-check-double" style="font-size:9px;color:#8696A0;margin-left:2px;"></i>';
+            : '<i class="fas fa-check" style="font-size:9px;margin-left:2px;"></i>';
           timeEl.innerHTML = (m.time||'') + ' ' + tickHtml;
         }
         lastEl = existingEl;
@@ -20948,7 +20948,7 @@ function renderClientMessages(msgs) {
       ${!mine ? `<div class="msg-avatar">${avatar}</div>` : ''}
       <div class="msg-group">
         ${bodyHtml}
-        <div class="msg-time">${m.time||''} ${mine ? (m.readAt ? '<i class="fas fa-check-double" style="font-size:9px;color:#53BDEB;margin-left:2px;"></i>' : '<i class="fas fa-check-double" style="font-size:9px;color:#8696A0;margin-left:2px;"></i>') : ''}</div>
+        <div class="msg-time">${m.time||''} ${mine ? (m.readAt ? '<i class="fas fa-check-double" style="font-size:9px;color:#53BDEB;margin-left:2px;"></i>' : '<i class="fas fa-check" style="font-size:9px;margin-left:2px;"></i>') : ''}</div>
       </div>
     </div>`;
     const tmp = document.createElement('div');
@@ -21391,9 +21391,10 @@ function saRenderMessages() {
     const lp = `onmousedown="saLongPressStart('${m.id}')" onmouseup="saLongPressEnd()" onmouseleave="saLongPressEnd()" ontouchstart="saLongPressStart('${m.id}')" ontouchend="saLongPressEnd()"`;
     if (isMine) {
       const _tickCls = m.readAt ? 'tick read' : 'tick';
+      const _tickIcon = m.readAt ? 'fa-check-double' : 'fa-check';
       const _mineBody = m.file
-        ? `${_bubbleContent}<span class="msg-time" style="display:block;text-align:right;margin-top:2px;">${m.time} <i class="fas fa-check-double ${_tickCls}"></i></span>`
-        : `<div class="msg-bubble">${_bubbleContent}<span class="msg-time">${m.time} <i class="fas fa-check-double ${_tickCls}"></i></span></div>`;
+        ? `${_bubbleContent}<span class="msg-time" style="display:block;text-align:right;margin-top:2px;">${m.time} <i class="fas ${_tickIcon} ${_tickCls}"></i></span>`
+        : `<div class="msg-bubble">${_bubbleContent}<span class="msg-time">${m.time} <i class="fas ${_tickIcon} ${_tickCls}"></i></span></div>`;
       html += `<div class="msg-wrap mine" data-msgid="${m.id}" style="${selStyle}${selBg}" ${lp}>
         ${dot}
         <div class="msg-group">${_mineBody}</div>
@@ -22601,7 +22602,7 @@ function sendQuotation() {
             ${noteVal ? `<div style="margin-top:6px;font-size:12px;color:var(--text-mid);background:var(--off-white);padding:6px 8px;border-radius:6px;">${noteVal}</div>` : ''}
           </div>
         </div>
-        <div class="msg-time">${currentTime()} <i class="fas fa-check-double" style="font-size:9px;color:#8696A0;margin-left:3px;"></i></div>
+        <div class="msg-time">${currentTime()} <i class="fas fa-check" style="font-size:9px;margin-left:3px;"></i></div>
       </div>`;
     msgs.appendChild(wrap);
     msgs.scrollTop = msgs.scrollHeight;
@@ -26052,7 +26053,7 @@ function adminConfirmedLogout() {
 #superAdminWrapper .chat-bubble.sent .chat-bubble-time { color: #667781; }
 #superAdminWrapper .chat-bubble.received .chat-bubble-time { color: #8696A0; }
 #superAdminWrapper .chat-tick { font-size: 13px; }
-#superAdminWrapper .chat-tick.delivered { color: #8696A0; }
+#superAdminWrapper .chat-tick.delivered { color: inherit; }
 #superAdminWrapper .chat-tick.read { color: #53BDEB; }
 
 /* Typing indicator */
@@ -34643,9 +34644,10 @@ function acmRenderMessages(id) {
     const rowStyle = _acmSelectMode ? `cursor:pointer;${isSelected?'background:rgba(11,150,136,0.16);border-radius:10px;':''}` : '';
     if (isSent) {
       const _acmTickCls = m.readAt ? 'chat-tick read' : 'chat-tick delivered';
+      const _acmTickIcon = m.readAt ? 'fa-check-double' : 'fa-check';
       const _acmSentBody = m.file
-        ? `${content}<div class="chat-bubble-time" style="text-align:right;font-size:10px;color:var(--gray);margin-top:2px;">${m.time} <i class="fas fa-check-double ${_acmTickCls}"></i></div>`
-        : `<div class="chat-bubble sent">${content}<div class="chat-bubble-time">${m.time} <i class="fas fa-check-double ${_acmTickCls}"></i></div></div>`;
+        ? `${content}<div class="chat-bubble-time" style="text-align:right;font-size:10px;color:var(--gray);margin-top:2px;">${m.time} <i class="fas ${_acmTickIcon} ${_acmTickCls}"></i></div>`
+        : `<div class="chat-bubble sent">${content}<div class="chat-bubble-time">${m.time} <i class="fas ${_acmTickIcon} ${_acmTickCls}"></i></div></div>`;
       return `<div class="chat-msg-row sent" ${m.id ? `data-msgid="${m.id}"` : ''} style="${rowStyle}" ${lp} ${rowClick}>
         ${chk}
         ${_acmSentBody}
@@ -35176,8 +35178,9 @@ function renderChatMessages(adminId) {
        }
      }
     if (isMine) {
-      const _rcmTickColor = m.readAt ? '#53BDEB' : '#8696A0';
-      const _sentBody = fileHtml ? `${fileHtml}${safe ? `<div class="chat-bubble sent" style="margin-top:2px;">${safe}<span class="chat-bubble-time">${m.time||''} <i class="fas fa-check-double" style="font-size:9px;color:${_rcmTickColor};margin-left:2px;"></i></span></div>` : `<div class="cp-msg-bubble-time" style="font-size:10px;color:rgba(255,255,255,0.7);text-align:right;margin-top:2px;">${m.time||''} <i class="fas fa-check-double" style="font-size:9px;color:${_rcmTickColor};"></i></div>`}` : `<div class="chat-bubble sent">${safe}<span class="chat-bubble-time">${m.time||''} <i class="fas fa-check-double" style="font-size:9px;color:${_rcmTickColor};margin-left:2px;"></i></span></div>`;
+      const _rcmTickColor = m.readAt ? '#53BDEB' : '';
+      const _rcmTickIcon = m.readAt ? 'fa-check-double' : 'fa-check';
+      const _sentBody = fileHtml ? `${fileHtml}${safe ? `<div class="chat-bubble sent" style="margin-top:2px;">${safe}<span class="chat-bubble-time">${m.time||''} <i class="fas ${_rcmTickIcon}"${_rcmTickColor ? ` style="font-size:9px;color:${_rcmTickColor};margin-left:2px;"` : ' style="font-size:9px;margin-left:2px;"'}></i></span></div>` : `<div class="cp-msg-bubble-time" style="font-size:10px;color:rgba(255,255,255,0.7);text-align:right;margin-top:2px;">${m.time||''} <i class="fas ${_rcmTickIcon}"${_rcmTickColor ? ` style="font-size:9px;color:${_rcmTickColor};"` : ' style="font-size:9px;"'}></i></div>`}` : `<div class="chat-bubble sent">${safe}<span class="chat-bubble-time">${m.time||''} <i class="fas ${_rcmTickIcon}"${_rcmTickColor ? ` style="font-size:9px;color:${_rcmTickColor};margin-left:2px;"` : ' style="font-size:9px;margin-left:2px;"'}></i></span></div>`;
       return `<div class="chat-msg-row sent" data-msgid="${mid}" style="${selStyle}${selBg}" ${lp}>
         ${checkDot}
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;max-width:68%;flex:1;">
@@ -37405,7 +37408,7 @@ function chatRenderMessages(id) {
               ${m.text}
               <div class="chat-bubble-time">
                 ${m.time}
-                <span class="chat-tick ${(m.readAt || m.read) ? 'read' : 'delivered'}"><i class="fas fa-check-double"></i></span>
+                <span class="chat-tick ${(m.readAt || m.read) ? 'read' : 'delivered'}"><i class="fas ${(m.readAt || m.read) ? 'fa-check-double' : 'fa-check'}"></i></span>
               </div>
             </div>
           </div>`;
