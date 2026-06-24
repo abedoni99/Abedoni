@@ -34,7 +34,7 @@
   // ── Global helpers — window-এ রাখলে পুরনো কোডও ব্যবহার করতে পারবে ──
   window._db = db;
   window._auth = auth;
-  window._fbModules = { collection, addDoc, doc, getDoc, getDocs, setDoc, onSnapshot, updateDoc, serverTimestamp, query, orderBy, where };
+  window._fbModules = { collection, addDoc, doc, getDoc, getDocs, setDoc, onSnapshot, updateDoc, deleteDoc, serverTimestamp, query, orderBy, where };
 
   // ── আবেদন Firebase-এ সেভ করো ──
   window.fbSubmitApplication = async function(data) {
