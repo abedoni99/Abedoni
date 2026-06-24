@@ -30817,8 +30817,11 @@ function _startAdminsFbSync() {
               else state.admins[idx] = Object.assign({}, state.admins[idx], merged);
 
               // ── p3state.chatContacts-এও সিঙ্ক করো — যাতে নিয়োগকৃত এডমিন
-              //    Super Admin প্যানেলের লাইভ চ্যাট লিস্টে (ব্যক্তিগত চ্যাট) দেখা যায় ──
-              if (typeof p3state !== 'undefined' && p3state.chatContacts) {
+              //    Super Admin প্যানেলের লাইভ চ্যাট লিস্টে (ব্যক্তিগত চ্যাট) দেখা যায়।
+              //    Super Admin নিজের ডকুমেন্ট (role: 'super-admin') কখনোই এই
+              //    চ্যাট-কন্টাক্ট লিস্টে যুক্ত হবে না — নাহলে নিজের একাউন্টই নিজের
+              //    চ্যাট লিস্টে দেখা যেত। ──
+              if (fa.role !== 'super-admin' && typeof p3state !== 'undefined' && p3state.chatContacts) {
                 const cIdx = p3state.chatContacts.findIndex(function(c){ return String(c.id) === String(mergedId); });
                 if (cIdx === -1) {
                   const colors = ['#1B3A8C','#2F6B4F','#7B2FBE','#C0392B','#C9A227','#2471A3','#1E8449'];
@@ -36966,6 +36969,7 @@ function initChat() {
       var colors = ['#1B3A8C','#2F6B4F','#7B2FBE','#C0392B','#C9A227','#2471A3','#1E8449'];
       fsAdmins.forEach(function(fa) {
         if (!fa || !fa.id) return;
+        if (fa.role === 'super-admin') return; // সুপার এডমিন নিজেকে নিজের চ্যাট লিস্টে দেখাবে না
         var mid = isNaN(fa.id) ? fa.id : Number(fa.id);
         if (!p3state.chatContacts) p3state.chatContacts = [];
         var ci = p3state.chatContacts.findIndex(function(c){ return String(c.id) === String(mid); });
