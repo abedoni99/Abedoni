@@ -13802,21 +13802,20 @@ function cpRenderMessages(msgs) {
   const newSig = _cpMsgSignature(msgs);
   if (_cpLastRenderedMsgs !== null && newSig === _cpMsgSignature(_cpLastRenderedMsgs)) {
     // শুধু readAt tick আপডেট করো — পুরো rebuild দরকার নেই
+    // prevM comparison বাদ: .slice() shallow copy হওয়ায় prevM===m — DOM থেকে tick check করো
     if (msgs && msgs.length) {
       msgs.forEach(function(m) {
-        if (!m.id) return;
+        if (!m.id || m.from !== 'client') return;
         const row = container.querySelector('[data-msgid="' + m.id + '"]');
         if (!row) return;
         const tickEl = row.querySelector('.cp-msg-time');
-        if (tickEl && m.from === 'client') {
-          // readAt বদলে থাকলে tick আপডেট করো
-          const prevM = _cpLastRenderedMsgs.find(function(x){ return x.id === m.id; });
-          if (prevM && prevM.readAt !== m.readAt) {
-            const newTick = m.readAt
-              ? '<i class="fas fa-check-double" style="font-size:9px;color:#53BDEB;margin-left:2px;"></i>'
-              : '<i class="fas fa-check" style="font-size:9px;margin-left:2px;"></i>';
-            tickEl.innerHTML = (m.time || '') + newTick;
-          }
+        if (!tickEl) return;
+        const hasDouble = tickEl.querySelector('.fa-check-double');
+        const hasSingle = !hasDouble && tickEl.querySelector('i.fa-check');
+        if (m.readAt && !hasDouble) {
+          tickEl.innerHTML = (m.time || '') + '<i class="fas fa-check-double" style="font-size:9px;color:#53BDEB;margin-left:2px;"></i>';
+        } else if (!m.readAt && hasSingle === false && !hasDouble) {
+          tickEl.innerHTML = (m.time || '') + '<i class="fas fa-check" style="font-size:9px;margin-left:2px;"></i>';
         }
       });
     }
@@ -13841,15 +13840,16 @@ function cpRenderMessages(msgs) {
   if (sameStructure) {
     // ক্রম ও সংখ্যা একই — শুধু readAt tick in-place আপডেট করো, container স্পর্শ করো না
     msgs.forEach(function(m) {
-      if (!m.id) return;
+      if (!m.id || m.from !== 'client') return;
       const row = container.querySelector('[data-msgid="' + m.id + '"]');
       if (!row) return;
       const tickEl = row.querySelector('.cp-msg-time');
-      if (tickEl && m.from === 'client') {
-        const newTick = m.readAt
-          ? '<i class="fas fa-check-double" style="font-size:9px;color:#53BDEB;margin-left:2px;"></i>'
-          : '<i class="fas fa-check" style="font-size:9px;margin-left:2px;"></i>';
-        tickEl.innerHTML = (m.time || '') + newTick;
+      if (!tickEl) return;
+      const hasDouble = tickEl.querySelector('.fa-check-double');
+      if (m.readAt && !hasDouble) {
+        tickEl.innerHTML = (m.time || '') + '<i class="fas fa-check-double" style="font-size:9px;color:#53BDEB;margin-left:2px;"></i>';
+      } else if (!m.readAt && hasDouble) {
+        tickEl.innerHTML = (m.time || '') + '<i class="fas fa-check" style="font-size:9px;margin-left:2px;"></i>';
       }
     });
     return;
@@ -20891,10 +20891,12 @@ function renderClientMessages(msgs) {
         // শুধু read-tick আপডেট করো — HTML card বা content re-render করবো না
         const timeEl = existingEl.querySelector('.msg-time');
         if (timeEl && m.from === 'admin') {
-          const tickHtml = m.readAt
-            ? '<i class="fas fa-check-double" style="font-size:9px;color:#53BDEB;margin-left:2px;"></i>'
-            : '<i class="fas fa-check" style="font-size:9px;margin-left:2px;"></i>';
-          timeEl.innerHTML = (m.time||'') + ' ' + tickHtml;
+          const _hasDouble = timeEl.querySelector('.fa-check-double');
+          if (m.readAt && !_hasDouble) {
+            timeEl.innerHTML = (m.time||'') + ' <i class="fas fa-check-double" style="font-size:9px;color:#53BDEB;margin-left:2px;"></i>';
+          } else if (!m.readAt && _hasDouble) {
+            timeEl.innerHTML = (m.time||'') + ' <i class="fas fa-check" style="font-size:9px;margin-left:2px;"></i>';
+          }
         }
         lastEl = existingEl;
         return;
