@@ -16812,12 +16812,18 @@ renderAll();
           </div>
 
           <!-- বিশেষ চুক্তি (customTnC.extraNote থাকলে দেখাবে) -->
-          <div id="stcExtraWrap" class="stc-section" style="display:none;margin-bottom:0;">
+          <div id="stcExtraWrap" class="stc-section" style="display:none;">
             <div class="stc-sec-title"><i class="fas fa-star"></i> বিশেষ চুক্তি ও অতিরিক্ত শর্ত</div>
             <div class="stc-item" style="background:rgba(201,162,39,0.07);border-color:rgba(201,162,39,0.2);">
               <i class="fas fa-circle-dot" style="color:#C9A227;"></i>
               <span id="stcExtraNote" style="color:#333;"></span>
             </div>
+          </div>
+
+          <!-- কাস্টম শর্তাবলী (Super Admin কর্তৃক নির্ধারিত) -->
+          <div id="stcCustomConditionsWrap" class="stc-section" style="display:none;margin-bottom:0;">
+            <div class="stc-sec-title"><i class="fas fa-file-shield" style="color:#C9A227;"></i> বিশেষ নিয়োগ শর্তাবলী</div>
+            <div id="stcCustomConditionsList" style="display:flex;flex-direction:column;gap:6px;"></div>
           </div>
 
         </div><!-- /stc-scroll -->
@@ -18651,7 +18657,7 @@ function _setupApplyCustomTnC(tnc) {
   document.querySelectorAll('.stc-max-jobs').forEach(function(el) {
     el.textContent = maxJobs + 'টি';
   });
-  // বিশেষ শর্ত
+  // বিশেষ শর্ত (legacy extraNote)
   const extraEl = document.getElementById('stcExtraNote');
   const extraWrap = document.getElementById('stcExtraWrap');
   if (extraEl && extraWrap) {
@@ -18662,6 +18668,26 @@ function _setupApplyCustomTnC(tnc) {
       extraWrap.style.display = 'none';
     }
   }
+  // কাস্টম শর্তাবলী (conditions অ্যারে) — আলাদা সেকশনে দেখাও
+  var customWrap = document.getElementById('stcCustomConditionsWrap');
+  if (!customWrap) return;
+  var conditions = (tnc.conditions && tnc.conditions.length) ? tnc.conditions : null;
+  if (!conditions) {
+    customWrap.style.display = 'none';
+    return;
+  }
+  customWrap.style.display = 'block';
+  var list = document.getElementById('stcCustomConditionsList');
+  if (!list) return;
+  list.innerHTML = '';
+  conditions.forEach(function(c) {
+    var isWarn = c.type === 'warn';
+    var div = document.createElement('div');
+    div.className = 'stc-item' + (isWarn ? ' warn' : '');
+    div.innerHTML = '<i class="fas fa-' + (isWarn ? 'triangle-exclamation' : 'circle-dot') + '"></i>'
+      + '<span>' + (c.title ? '<b>' + c.title + ':</b> ' : '') + (c.text || '') + '</span>';
+    list.appendChild(div);
+  });
 }
 
 function setupAvatarLetterUpdate() {
@@ -29117,7 +29143,7 @@ function adminConfirmedLogout() {
         <div style="display:flex;align-items:center;gap:10px;">
           <input type="number" class="form-control" id="newAdminComm" min="1" max="99" value="65"
             style="max-width:120px;font-size:16px;font-weight:700;text-align:center;"
-            oninput="var v=parseInt(this.value)||0;document.getElementById('commRemainDisplay').textContent=Math.max(0,100-v);">
+            oninput="var v=parseInt(this.value)||0;document.getElementById('commRemainDisplay').textContent=Math.max(0,100-v);var _pc=_tncConditions&&_tncConditions.find(function(c){return c.title==='পে-আউট পলিসি';});if(_pc){_pc.text='অর্জিত আয়ের '+v+'% এডমিন পাবেন। ভুলের কারণে রিফান্ড হলে সেই টাকা এডমিনের ব্যালেন্স থেকে কাটা যাবে।';_tncRenderConditions();}">
           <span style="font-size:13px;color:var(--gray);">বাকি <span id="commRemainDisplay">35</span>% প্ল্যাটফর্মের</span>
         </div>
       </div>
@@ -30763,6 +30789,12 @@ function _startAdminsFbSync() {
             if (typeof renderChatContacts === 'function') renderChatContacts();
             if (typeof renderMonthly === 'function') renderMonthly(); /* কমিশন রেট সিঙ্কের পরে মাসিক হিসাব রিফ্রেশ */
             if (typeof ltRenderAdminList === 'function') ltRenderAdminList(); /* ইনবক্স মনিটরের এডমিন লিস্টও সাথে সাথে রিফ্রেশ করো */
+            if (typeof lsSave === 'function') lsSave(); /* profileData সহ সব fresh data localStorage-এ সেভ করো */
+            /* adminProfileModal খোলা থাকলে সেটাও রিফ্রেশ করো */
+            var _apmModal = document.getElementById('adminProfileModal');
+            if (_apmModal && _apmModal.style.display === 'flex' && typeof _apmCurrentAdminId !== 'undefined' && _apmCurrentAdminId) {
+              try { viewAdminProfile(_apmCurrentAdminId); } catch(_e) {}
+            }
           } catch(e) { console.error('Admin sync render failed:', e); }
         });
       } else if (retries > 0) {
@@ -31710,10 +31742,17 @@ function viewAdminProfile(adminId) {
   // Firestore থেকে সর্বশেষ profileData আনার চেষ্টা
   if (a.id && typeof window.fbGetAdminProfile === 'function') {
     window.fbGetAdminProfile(a.id, function(fresh) {
-      if (fresh && fresh.profileData) {
-        a.profileData = fresh.profileData;
-        viewAdminProfile(adminId); // re-render with fresh data
+      if (!fresh) return;
+      // state.admins-এ সব fresh ফিল্ড মার্জ করো (profileData, comm, customTnC সহ)
+      const stateAdmin = state.admins.find(function(x){ return String(x.id) === String(a.id); });
+      if (stateAdmin) {
+        Object.assign(stateAdmin, fresh);
       }
+      viewAdminProfile(adminId); // re-render with fresh data
+      // সুপার এডমিনের টেবিল ও স্ট্যাটস আপডেট করো
+      if (typeof renderAdminTable === 'function') renderAdminTable();
+      if (typeof updateStats === 'function') updateStats();
+      if (typeof renderMonthly === 'function') renderMonthly();
     });
   }
 }
@@ -31871,8 +31910,15 @@ function openAddAdmin() {
   var _remEl = document.getElementById('commRemainDisplay'); if (_remEl) _remEl.textContent = '35';
   const box = document.getElementById('adminLoginCodeBox');
   if (box) box.style.display = 'none';
-  // TnC — ডিফল্ট শর্তগুলো লোড করো
-  _tncConditions = _TNC_DEFAULTS.map(function(c){ return Object.assign({}, c); });
+  // TnC — ডিফল্ট শর্তগুলো লোড করো, পে-আউট পলিসিতে কমিশন রেট বসাও
+  _tncConditions = _TNC_DEFAULTS.map(function(c) {
+    var copy = Object.assign({}, c);
+    if (copy.title === 'পে-আউট পলিসি') {
+      var commVal = parseInt((_commEl && _commEl.value) || '65') || 65;
+      copy.text = 'অর্জিত আয়ের ' + commVal + '% এডমিন পাবেন। ভুলের কারণে রিফান্ড হলে সেই টাকা এডমিনের ব্যালেন্স থেকে কাটা যাবে।';
+    }
+    return copy;
+  });
   _tncEditIdx = -1;
   tncCondCancel();
   _tncRenderConditions();
@@ -32040,11 +32086,18 @@ async function addAdmin() {
     toast('এই UID দিয়ে ইতিমধ্যে একজন এডমিন আছেন।', 'error'); return;
   }
 
-  // কাস্টম TnC — সব conditions সেভ করো
+  // কাস্টম TnC — সব conditions সেভ করো, পে-আউট পলিসিতে সঠিক কমিশন রেট বসাও
+  const _finalConditions = (_tncConditions || []).map(function(c) {
+    var copy = Object.assign({}, c);
+    if (copy.title === 'পে-আউট পলিসি') {
+      copy.text = 'অর্জিত আয়ের ' + comm + '% এডমিন পাবেন। ভুলের কারণে রিফান্ড হলে সেই টাকা এডমিনের ব্যালেন্স থেকে কাটা যাবে।';
+    }
+    return copy;
+  });
   const customTnC = {
     commRate:   comm,
     maxJobs:    3,
-    conditions: (_tncConditions || []).slice(),
+    conditions: _finalConditions,
     createdAt:  new Date().toISOString()
   };
 
