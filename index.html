@@ -39107,14 +39107,19 @@ async function clientFileDownload(trackingId, fileDocId, fileName) {
         timeStr: new Date().toLocaleTimeString('bn-BD', {hour:'2-digit',minute:'2-digit'}),
         createdAt: mods.serverTimestamp()
       });
-      // local list থেকে আগেই সরাও — Firebase update loop এড়াতে
-      if (typeof _acceptedChats !== 'undefined') {
-        _acceptedChats = _acceptedChats.filter(function(c){ return (c.appId || c.id) !== appId; });
-        if (typeof renderAcceptedChatList === 'function') renderAcceptedChatList();
-      }
-      if (!window._transferDone) window._transferDone = new Set();
-      window._transferDone.add(appId);
       await mods.updateDoc(mods.doc(db, 'applications', appId), { acceptedBy: null, status: -1 });
+      // app_notifications এও acceptedBy null করো — chat list থেকে সরাতে
+      try {
+        var nSnap = await mods.getDocs(mods.query(mods.collection(db, 'app_notifications'), mods.where('appId', '==', appId)));
+        nSnap.forEach(async function(nd) {
+          await mods.updateDoc(mods.doc(db, 'app_notifications', nd.id), { acceptedBy: null, completed: false });
+        });
+        // local list থেকেও সরাও
+        if (typeof _acceptedChats !== 'undefined') {
+          _acceptedChats = _acceptedChats.filter(function(c){ return (c.appId || c.id) !== appId; });
+          if (typeof renderAcceptedChatList === 'function') renderAcceptedChatList();
+        }
+      } catch(ne) { console.error('notif update error:', ne); }
       window.closeTransferModal();
       if (typeof chatBackToList === 'function') chatBackToList();
       if (typeof showToast === 'function') showToast('Transfer সম্পন্ন', 'আবেদনটি pool-এ ফিরে গেছে।', 'success');
