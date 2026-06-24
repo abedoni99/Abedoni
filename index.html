@@ -14132,7 +14132,7 @@ function _cpBuildMsgRow(m) {
           deliveryCompleted: true,
           deliveryCompletedAt: new Date().toISOString(),
           status: 3
-        }).then(function(){
+        }).then(async function(){
           // ── listener বন্ধ করো ──
           if (window._cpUnsubscribe) {
             try { window._cpUnsubscribe(); } catch(e) {}
@@ -14143,7 +14143,6 @@ function _cpBuildMsgRow(m) {
             window._cpStatusUnsub = null;
           }
           // ── ক্লায়েন্ট পোর্টাল UI আপডেট করো — সম্পন্ন বার্তা দেখাও ──
-          // (messages delete করা হবে admin panel থেকে — client-এর delete permission নেই)
           if (typeof cpCurrentApp !== 'undefined' && cpCurrentApp) {
             cpCurrentApp.messages = [];
           }
@@ -14154,6 +14153,22 @@ function _cpBuildMsgRow(m) {
           // tracking portal lock করো
           const cpTrackBtn = document.getElementById('cpTrackBtn');
           if (cpTrackBtn) cpTrackBtn.style.display = 'none';
+          // ── সরাসরি notification কমপ্লিট ও চ্যাট ডেটা মুছো ──
+          // (fbListenApplications listener active না থাকলেও কাজ করবে)
+          try {
+            if (typeof window.fbCompleteNotificationByAppId === 'function') {
+              await window.fbCompleteNotificationByAppId(key, {
+                appliedAmount: _dfCharge,
+                serviceName: _dfService,
+                acceptedBy: _dfAdminId
+              });
+            }
+          } catch(eN) { console.error('dfSubmitForm completeNotif error:', eN); }
+          setTimeout(async function() {
+            try {
+              if (typeof window.fbDeleteChatData === 'function') await window.fbDeleteChatData(key);
+            } catch(eD) { console.error('dfSubmitForm deleteChatData error:', eD); }
+          }, 1500);
         }).catch(function(e){ console.error('dfSubmitForm firebase error:', e); });
       }
     } catch(e) { console.error('dfSubmitForm firebase error:', e); }
@@ -39149,11 +39164,11 @@ async function clientFileDownload(trackingId, fileDocId, fileName) {
         createdAt: mods.serverTimestamp()
       });
       await mods.updateDoc(mods.doc(db, 'applications', appId), { acceptedBy: null, status: -1 });
-      // app_notifications এও acceptedBy null করো — chat list থেকে সরাতে
+      // app_notifications এও acceptedBy null করো — নতুন আবেদনে ফিরে যাবে
       try {
         var nSnap = await mods.getDocs(mods.query(mods.collection(db, 'app_notifications'), mods.where('appId', '==', appId)));
         nSnap.forEach(async function(nd) {
-          await mods.updateDoc(mods.doc(db, 'app_notifications', nd.id), { acceptedBy: null, completed: false });
+          await mods.updateDoc(mods.doc(db, 'app_notifications', nd.id), { acceptedBy: null, acceptedByName: null, acceptedByPhoto: null, acceptedByCode: null, acceptedAt: null, completed: false });
         });
         // local list থেকেও সরাও
         if (typeof _acceptedChats !== 'undefined') {
@@ -39161,6 +39176,12 @@ async function clientFileDownload(trackingId, fileDocId, fileName) {
           if (typeof renderAcceptedChatList === 'function') renderAcceptedChatList();
         }
       } catch(ne) { console.error('notif update error:', ne); }
+      // ── ট্রান্সফারের পর চ্যাট মেসেজ মুছো — নতুন এডমিন পরিষ্কার চ্যাট পাবে ──
+      setTimeout(async function() {
+        try {
+          if (typeof window.fbDeleteChatData === 'function') await window.fbDeleteChatData(appId);
+        } catch(eD) { console.error('transfer chat delete error:', eD); }
+      }, 2000);
       window.closeTransferModal();
       if (typeof chatBackToList === 'function') chatBackToList();
       if (typeof showToast === 'function') showToast('Transfer সম্পন্ন', 'আবেদনটি pool-এ ফিরে গেছে।', 'success');
@@ -39219,6 +39240,14 @@ async function clientFileDownload(trackingId, fileDocId, fileName) {
             deliveryCompletedAt: new Date().toISOString(),
             status: 3, closedByAdmin: true, closeReason: reason || ''
           });
+          // ── app_notifications থেকে এই appId-এর রেকর্ড ডিলিট করো ──
+          try {
+            var nSnap2 = await mods.getDocs(mods.query(mods.collection(db, 'app_notifications'), mods.where('appId', '==', appId)));
+            var nDels = [];
+            nSnap2.forEach(function(nd) { nDels.push(mods.deleteDoc(mods.doc(db, 'app_notifications', nd.id))); });
+            await Promise.all(nDels);
+          } catch(eN) { console.error('close notif delete error:', eN); }
+          // ── চ্যাট ডেটা মুছো ──
           if (typeof window.fbDeleteChatData === 'function') await window.fbDeleteChatData(appId);
         } catch(e2) { console.error('close cleanup error:', e2); }
       }, 3000);
