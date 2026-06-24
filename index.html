@@ -24941,7 +24941,7 @@ function adminConfirmedLogout() {
 @media (max-width: 600px) {
   #superAdminWrapper .topbar { padding: 0 14px; height: 56px; }
   :root { --topbar-h: 56px; }
-  #superAdminWrapper .topbar-title { font-size: 15px; }
+  #superAdminWrapper .topbar-title { display: none; }
   #superAdminWrapper .tb-live { display: none; }
   #superAdminWrapper .sa-btn-label { display: none; }
   #superAdminWrapper .main { padding-bottom: 80px !important; }
@@ -29107,6 +29107,21 @@ function adminConfirmedLogout() {
       </div>
       <input type="hidden" id="newAdminCode" value="">
 
+      <!-- কমিশন রেট -->
+      <div class="form-group" style="margin-top:14px;">
+        <label style="display:flex;align-items:center;gap:6px;">
+          <i class="fas fa-percent" style="color:var(--accent);font-size:13px;"></i>
+          কমিশন রেট (%) *
+          <span style="font-size:11px;font-weight:400;color:var(--gray);">— এডমিন প্রতিটি সফল কাজে যত % পাবেন</span>
+        </label>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <input type="number" class="form-control" id="newAdminComm" min="1" max="99" value="65"
+            style="max-width:120px;font-size:16px;font-weight:700;text-align:center;"
+            oninput="var v=parseInt(this.value)||0;document.getElementById('commRemainDisplay').textContent=Math.max(0,100-v);">
+          <span style="font-size:13px;color:var(--gray);">বাকি <span id="commRemainDisplay">35</span>% প্ল্যাটফর্মের</span>
+        </div>
+      </div>
+
       <!-- চুক্তির শর্তাবলী — সম্পূর্ণ CRUD -->
       <div style="margin-top:16px;" id="tncConditionsSection">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
@@ -31852,6 +31867,8 @@ function openAddAdmin() {
     var el = document.getElementById(id); if (el) el.value = '';
   });
   document.getElementById('newAdminCode').value = '';
+  var _commEl = document.getElementById('newAdminComm'); if (_commEl) _commEl.value = '65';
+  var _remEl = document.getElementById('commRemainDisplay'); if (_remEl) _remEl.textContent = '35';
   const box = document.getElementById('adminLoginCodeBox');
   if (box) box.style.display = 'none';
   // TnC — ডিফল্ট শর্তগুলো লোড করো
@@ -32009,13 +32026,9 @@ async function addAdmin() {
   const area  = (document.getElementById('newAdminArea').value || '').trim() || 'অজ্ঞাত';
   const uid   = (document.getElementById('newAdminUID').value || '').trim();
 
-  // কমিশন — "পে-আউট পলিসি" শর্ত থেকে খোঁজো, না পেলে ডিফল্ট ৬৫
-  var commMatch = null;
-  (_tncConditions || []).forEach(function(c){
-    var m = (c.text || '').match(/(\d+)%/);
-    if (m && c.title && c.title.indexOf('পে-আউট') >= 0) commMatch = parseInt(m[1]);
-  });
-  const comm  = commMatch || 65;
+  // কমিশন — সরাসরি ইনপুট ফিল্ড থেকে পড়ো
+  const _commInput = document.getElementById('newAdminComm');
+  const comm = Math.min(99, Math.max(1, parseInt((_commInput && _commInput.value) || '65') || 65));
 
   if (!name)  { toast('এডমিনের নাম দিন', 'error'); return; }
   if (!phone) { toast('ফোন নম্বর দিন', 'error'); return; }
@@ -32076,16 +32089,11 @@ async function addAdmin() {
     return;
   }
 
-  // Local state-এ যোগ করো
+  // Local state আলাদাভাবে push করা হচ্ছে না —
+  // Firestore listener (fbListenAdmins) স্বয়ংক্রিয়ভাবে state.admins ও
+  // p3state.chatContacts আপডেট করবে। আগে এখানেও push করা হতো বলেই
+  // লিস্টে একই এডমিন দুইবার দেখাচ্ছিল।
   if (!state.admins) state.admins = [];
-  state.admins.push(newAdminObj);
-
-  if (typeof p3state !== 'undefined' && p3state.chatContacts) {
-    p3state.chatContacts.push({ id: uid, name: name, online: false, lastMsg: 'নতুন এডমিন', lastTime: '', unread: 0, color: adminColor });
-    if (!p3state.chatMessages) p3state.chatMessages = {};
-    p3state.chatMessages[uid] = [];
-    if (typeof renderChatContacts === 'function') renderChatContacts();
-  }
 
   closeModal('addAdminModal');
 
@@ -32094,6 +32102,8 @@ async function addAdmin() {
   document.getElementById('newAdminPhone').value = '';
   document.getElementById('newAdminArea').value  = '';
   document.getElementById('newAdminUID').value   = '';
+  var _ce = document.getElementById('newAdminComm'); if (_ce) _ce.value = '65';
+  var _re = document.getElementById('commRemainDisplay'); if (_re) _re.textContent = '35';
   var box2 = document.getElementById('adminLoginCodeBox');
   if (box2) box2.style.display = 'none';
   _tncConditions = [];
