@@ -32,7 +32,7 @@
   // ── Global helpers — window-এ রাখলে পুরনো কোডও ব্যবহার করতে পারবে ──
   window._db = db;
   window._auth = auth;
-  window._fbModules = { collection, addDoc, doc, getDoc, setDoc, onSnapshot, updateDoc, serverTimestamp, query, orderBy };
+  window._fbModules = { collection, addDoc, doc, getDoc, getDocs, setDoc, onSnapshot, updateDoc, serverTimestamp, query, orderBy, where };
 
   // ── আবেদন Firebase-এ সেভ করো ──
   window.fbSubmitApplication = async function(data) {
@@ -38953,6 +38953,18 @@ async function clientFileDownload(trackingId, fileDocId, fileName) {
         createdAt: mods.serverTimestamp()
       });
       await mods.updateDoc(mods.doc(db, 'applications', appId), { acceptedBy: null, status: -1 });
+      // app_notifications এও acceptedBy null করো — chat list থেকে সরাতে
+      try {
+        var nSnap = await mods.getDocs(mods.query(mods.collection(db, 'app_notifications'), mods.where('appId', '==', appId)));
+        nSnap.forEach(async function(nd) {
+          await mods.updateDoc(mods.doc(db, 'app_notifications', nd.id), { acceptedBy: null, completed: false });
+        });
+        // local list থেকেও সরাও
+        if (typeof _acceptedChats !== 'undefined') {
+          _acceptedChats = _acceptedChats.filter(function(c){ return (c.appId || c.id) !== appId; });
+          if (typeof renderAcceptedChatList === 'function') renderAcceptedChatList();
+        }
+      } catch(ne) { console.error('notif update error:', ne); }
       window.closeTransferModal();
       if (typeof chatBackToList === 'function') chatBackToList();
       if (typeof showToast === 'function') showToast('Transfer সম্পন্ন', 'আবেদনটি pool-এ ফিরে গেছে।', 'success');
@@ -39014,6 +39026,11 @@ async function clientFileDownload(trackingId, fileDocId, fileName) {
           if (typeof window.fbDeleteChatData === 'function') await window.fbDeleteChatData(appId);
         } catch(e2) { console.error('close cleanup error:', e2); }
       }, 3000);
+      // chat list থেকে সরাতে _acceptedChats থেকে বাদ দাও
+      if (typeof _acceptedChats !== 'undefined') {
+        _acceptedChats = _acceptedChats.filter(function(c){ return (c.appId || c.id) !== appId; });
+        if (typeof renderAcceptedChatList === 'function') renderAcceptedChatList();
+      }
       window.closeCloseModal();
       if (typeof chatBackToList === 'function') chatBackToList();
       if (typeof showToast === 'function') showToast('আবেদন বন্ধ', 'ক্লায়েন্টকে জানানো হয়েছে।', 'success');
