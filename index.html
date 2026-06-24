@@ -37229,7 +37229,7 @@ function renderChatContacts(filter='') {
       : avSt;
     // এডমিন কোড badge
     var codeBadge = c.code ? '<span style="font-size:10px;color:#888;margin-left:4px;">·&nbsp;' + escHtml(c.code) + '</span>' : '';
-    return '<div class="chat-contact' + act + '" onclick="chatOpen(' + c.id + ')" style="">'
+    return '<div class="chat-contact' + act + '" onclick="chatOpen(\'' + String(c.id).replace(/'/g,"\\'") + '\')" style="">'
       + '<div class="chat-avatar" style="' + avatarStyle + '">' + avatarInner + '</div>'
       + '<div class="chat-contact-info">'
       + '<div class="chat-contact-name">' + escHtml(c.name) + codeBadge + '</div>'
