@@ -13269,12 +13269,19 @@ function cpSearchApp() {
           if (hasNewMsg) {
             _cpScrollToBottom(false);
           }
-          // unread admin message — readAt set করো (loop এড়াতে _cpMarkedRead cache ব্যবহার করো)
+          // unread admin message — readAt set করো শুধু যখন chat section দৃশ্যমান
+          // (minimize/close হলে seen হবে না — document.hidden বা chat overlay বন্ধ থাকলে skip)
           if (!window._cpMarkedRead) window._cpMarkedRead = new Set();
           const unreadAdminMsgs = mapped.filter(function(m) {
             return m.from !== 'client' && !m.readAt && m.id && !window._cpMarkedRead.has(m.id);
           });
-          if (unreadAdminMsgs.length > 0 && typeof window.fbMarkMessagesRead === 'function') {
+          const _cpOverlayOpen = (function() {
+            var ov = document.getElementById('cpChatOverlay');
+            if (!ov) return false;
+            return ov.classList.contains('open');
+          })();
+          if (unreadAdminMsgs.length > 0 && typeof window.fbMarkMessagesRead === 'function'
+              && !document.hidden && _cpOverlayOpen) {
             unreadAdminMsgs.forEach(function(m) { window._cpMarkedRead.add(m.id); });
             window.fbMarkMessagesRead(docId, 'client', unreadAdminMsgs);
           }
@@ -19067,19 +19074,20 @@ function adminChatRestore() {
   switchPanel('chat');
   window._chatRestoringFromBubble = false;
 
-  if (_chatMiniState.isSA) {
+  var _savedState = _chatMiniState;
+  _chatMiniState = null;
+  _cmbSyncVisibility();
+  if (_savedState.isSA) {
     // আগের Super Admin chat খুলে দাও
     setTimeout(function() {
       if (typeof openSuperAdminChat === 'function') openSuperAdminChat();
     }, 80);
-  } else if (_chatMiniState.appId) {
+  } else if (_savedState.appId) {
     // আগের ক্লায়েন্ট chat খুলে দাও
     setTimeout(function() {
-      openChat(_chatMiniState.appId, _chatMiniState.name, _chatMiniState.initials, null);
+      openChat(_savedState.appId, _savedState.name, _savedState.initials, null);
     }, 80);
   }
-  _chatMiniState = null;
-  _cmbSyncVisibility();
 }
 
 function _cmbSyncVisibility() {
@@ -20697,7 +20705,8 @@ function startClientMessageListener(appId) {
       return m.from === 'client' && !m.readAt && m.id && !_prevClientMsgIds.has(m.id);
     });
     _prevClientMsgIds = new Set(visible.map(function(m){ return m.id; }));
-    if (newClientMsgs.length > 0 && typeof window.fbMarkMessagesRead === 'function') {
+    if (newClientMsgs.length > 0 && typeof window.fbMarkMessagesRead === 'function'
+        && typeof currentAdmin !== 'undefined' && currentAdmin && currentAdmin.id) {
       window.fbMarkMessagesRead(appId, 'admin', newClientMsgs);
     }
   });
@@ -21140,7 +21149,8 @@ function _saStartListener() {
     const saWin = document.getElementById('saChatSection');
     if (saWin && saWin.classList.contains('sa-open')) {
       saRenderMessages();
-      if (typeof window.fbMarkSAMessagesRead === 'function') {
+      if (typeof window.fbMarkSAMessagesRead === 'function'
+          && typeof currentAdmin !== 'undefined' && currentAdmin && currentAdmin.id) {
         window.fbMarkSAMessagesRead(ch, 'admin', _saMsgsCache);
       }
     } else {
@@ -23808,18 +23818,15 @@ window.addEventListener('popstate', function(e) {
     return;
   }
 
-  // ── adminSession আছে এবং overlay বন্ধ আছে তাহলে minimize অবস্থা — বন্ধ করো না ──
-  try {
-    var sess = JSON.parse(sessionStorage.getItem('adminSession') || '{}');
-    if (sess && sess.id) {
-      var adminOverlayCheck = document.getElementById('adminModalOverlay');
-      if (adminOverlayCheck && adminOverlayCheck.style.display === 'none') {
-        // minimize অবস্থায় আছে — শুধু return bubble নিশ্চিত করো
-        if (returnAdminBtn) returnAdminBtn.style.setProperty('display', 'flex', 'important');
-        return;
-      }
+  // ── currentAdmin আছে এবং overlay বন্ধ আছে তাহলে minimize অবস্থা — বন্ধ করো না ──
+  if (typeof currentAdmin !== 'undefined' && currentAdmin && currentAdmin.id) {
+    var adminOverlayCheck = document.getElementById('adminModalOverlay');
+    if (adminOverlayCheck && adminOverlayCheck.style.display === 'none') {
+      // minimize অবস্থায় আছে — শুধু return bubble নিশ্চিত করো
+      if (returnAdminBtn) returnAdminBtn.style.setProperty('display', 'flex', 'important');
+      return;
     }
-  } catch(_e) {}
+  }
 
   // ── এডমিন লগইন মোডাল বা এডমিন প্যানেল খোলা থাকলে বন্ধ করো ──
   var adminOverlay = document.getElementById('adminModalOverlay');
@@ -34399,7 +34406,10 @@ function doBingSearch() {
 function renderChatContacts() {
   const el = document.getElementById('chatContacts');
   if (!el) return;
-  el.innerHTML = state.admins.map(a => `
+  // Super admin নিজেকে list থেকে বাদ দাও
+  const _myUid = (typeof currentAdmin !== 'undefined' && currentAdmin) ? String(currentAdmin.id) : null;
+  const _contacts = state.admins.filter(a => !_myUid || String(a.id) !== _myUid);
+  el.innerHTML = _contacts.map(a => `
     <div onclick="selectChatAdmin(${a.id})" style="display:flex;align-items:center;gap:10px;padding:12px 16px;cursor:pointer;transition:var(--transition);border-bottom:1px solid var(--gray-light);" onmouseover="this.style.background='var(--off-white)'" onmouseout="this.style.background='${state.currentChatAdmin===a.id?'rgba(10,36,99,0.06)':'transparent'}'">
       <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--primary-light),var(--primary));display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#fff;flex-shrink:0;">${a.name.charAt(0)}</div>
       <div style="flex:1;">
@@ -34676,7 +34686,15 @@ function acmRenderMessages(id) {
 const _admChatUnsubs = {};
 function _admChatStartListener(id) {
   const key = String(id);
-  if (_admChatUnsubs[key]) return; // ইতিমধ্যে শুনছে
+  if (_admChatUnsubs[key]) {
+    // ইতিমধ্যে listener চলছে — শুধু current messages render করো
+    if (state.currentChatAdmin == id && typeof renderChatMessages === 'function') {
+      renderChatMessages(id);
+      const saBox = document.getElementById('saChatMessages');
+      if (saBox) saBox.scrollTop = saBox.scrollHeight;
+    }
+    return;
+  }
   if (typeof window.fbListenSAMessages !== 'function') {
     setTimeout(() => _admChatStartListener(id), 800);
     return;
@@ -34702,7 +34720,8 @@ function _admChatStartListener(id) {
       const box = document.getElementById('acmMsgBox');
       if (box) box.scrollTop = box.scrollHeight;
       // সুপার-অ্যাডমিন এই চ্যাট দেখছে — এডমিনের পাঠানো unread মেসেজ "পড়া" মার্ক করো
-      if (typeof window.fbMarkSAMessagesRead === 'function') {
+      if (typeof window.fbMarkSAMessagesRead === 'function'
+          && typeof _isSessionValid === 'function' && _isSessionValid()) {
         window.fbMarkSAMessagesRead(key, 'super', fbMsgs);
       }
     }
@@ -37185,7 +37204,10 @@ function renderChatContacts(filter='') {
   const el = document.getElementById('saChatContactList');
   if(!el) return; // চ্যাট section active নেই — initChat() কল হলে render হবে
   // সর্বশেষ চ্যাট যার সাথে হয়েছে, সে সবার উপরে থাকবে
-  const sorted = (p3state.chatContacts || []).slice().sort((a, b) => (b._lastActivity || 0) - (a._lastActivity || 0));
+  // Super admin নিজেকে list থেকে বাদ দাও
+  const _myUid2 = (typeof currentAdmin !== 'undefined' && currentAdmin) ? String(currentAdmin.id) : null;
+  const _allContacts = (p3state.chatContacts || []).filter(c => !_myUid2 || String(c.id) !== _myUid2);
+  const sorted = _allContacts.slice().sort((a, b) => (b._lastActivity || 0) - (a._lastActivity || 0));
   let contacts = filter
     ? sorted.filter(c => c.name.toLowerCase().includes(filter.toLowerCase()) || String(c.code).includes(filter))
     : sorted;
@@ -38600,13 +38622,16 @@ document.addEventListener('keydown', e => {
      রেডি হওয়ার পরে — নাহলে rules-এর request.auth তখনও null থাকায়
      permission-denied এরর আসে। */
   document.addEventListener('DOMContentLoaded', function() {
-    // adminSession sessionStorage মুছে দাও — reload/minimize-এ auto re-login হবে না
-    // প্রতিবার নতুন করে login করতে হবে (security)
+    // adminSession sessionStorage মুছে দাও — reload-এ auto re-login হবে না
     try { sessionStorage.removeItem('adminSession'); } catch(e) {}
-    try {
-      // Firebase Auth থেকেও logout করো যাতে onAuthStateChanged আর fire না করে
-      if (typeof window.fbAdminLogout === 'function') window.fbAdminLogout().catch(function(){});
-    } catch(e) {}
+    // Firebase Auth থেকেও logout করো — SDK load হওয়া পর্যন্ত retry করো
+    (function _forceLogout(retries) {
+      if (typeof window.fbAdminLogout === 'function') {
+        window.fbAdminLogout().catch(function(){});
+      } else if (retries > 0) {
+        setTimeout(function() { _forceLogout(retries - 1); }, 300);
+      }
+    })(15);
 
     // ── সুপার এডমিনের ছবি Firestore থেকে লোড করো (admin panel saContact card) ──
     setTimeout(function loadSAPhoto() {
@@ -38703,12 +38728,9 @@ async function clientFileDownload(trackingId, fileDocId, fileName) {
       if (typeof renderCirculars === 'function') renderCirculars();
       return;
     }
-    /* ৪. Landing/Hero — admin/SA লগইন থাকলে তাদের প্যানেল রিওপেন করো, নাহলে reload */
-    // admin লগইন আছে কিনা চেক করো
-    var sess = null;
-    try { sess = JSON.parse(sessionStorage.getItem('adminSession') || '{}'); } catch(e2) {}
-    if (sess && sess.id) {
-      // admin লগইন আছে — overlay আবার খুলো
+    /* ৪. Landing/Hero — admin লগইন থাকলে প্যানেল রিওপেন করো, নাহলে reload */
+    // currentAdmin চেক করো (sessionStorage নয় — logout হলেও session থাকার bug এড়াতে)
+    if (typeof currentAdmin !== 'undefined' && currentAdmin && currentAdmin.id) {
       var aOr = document.getElementById('adminModalOverlay');
       if (aOr) {
         aOr.style.display = 'block';
