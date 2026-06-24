@@ -12,7 +12,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { initializeFirestore, collection, addDoc, doc, getDoc, getDocs, setDoc, onSnapshot, updateDoc, deleteDoc, serverTimestamp, query, where, orderBy } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-  import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, browserSessionPersistence, setPersistence } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyDjCn8xovGJegtI2A0iLSQ0jnwmG9Wz4lM",
@@ -26,6 +26,8 @@
 
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
+  // Tab বন্ধ হলেই Firebase Auth session শেষ হবে — localStorage-এ session টিকবে না
+  setPersistence(auth, browserSessionPersistence).catch(e => console.warn('setPersistence error:', e));
   // মোবাইলে long polling দিয়ে সরাসরি Firestore চালু করো (duplicate import নেই)
   const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFetchStreams: false });
 
@@ -38396,7 +38398,7 @@ document.addEventListener('keydown', e => {
       const { getDocs, query, where, collection } = window._fbModules;
       if (!getDocs || !collection) return;
       import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js').then(function(m) {
-        const q = m.query(m.collection(window._db, 'admins'), m.where('role', '==', 'super-admin'));
+        const q = m.query(m.collection(window._db, 'admin'), m.where('role', '==', 'super-admin'));
         return m.getDocs(q);
       }).then(function(snap) {
         if (snap && !snap.empty) {
