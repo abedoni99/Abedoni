@@ -121,9 +121,33 @@
   };
 
   // ── এডমিন প্যানেলে সব আবেদন রিয়েলটাইম ──
+  const _cleanupDone = new Set();
   window.fbListenApplications = function(callback) {
     return onSnapshot(collection(db, "applications"), (snap) => {
       const apps = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // delivery complete হলে একবারই cleanup করো
+      snap.docChanges().forEach(change => {
+        if (change.type === 'modified') {
+          const data = change.doc.data();
+          const id = change.doc.id;
+          // শুধু deliveryCompleted=true AND closedByAdmin নয় (close আলাদাভাবে handle হয়)
+          if (data.deliveryCompleted && !data.closedByAdmin && !_cleanupDone.has(id)) {
+            _cleanupDone.add(id);
+            setTimeout(async () => {
+              try {
+                if (typeof window.fbDeleteChatData === 'function') await window.fbDeleteChatData(id);
+                if (typeof window.fbCompleteNotificationByAppId === 'function') {
+                  await window.fbCompleteNotificationByAppId(id, {
+                    appliedAmount: data.appliedAmount || 0,
+                    serviceName: data.serviceName || '',
+                    acceptedBy: data.acceptedBy || ''
+                  });
+                }
+              } catch(e) { console.error('cleanup error:', e); }
+            }, 3000);
+          }
+        }
+      });
       callback(apps);
     }, (err) => {
       console.error("fbListenApplications error:", err);
