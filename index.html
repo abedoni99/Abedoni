@@ -39176,35 +39176,41 @@ async function clientFileDownload(trackingId, fileDocId, fileName) {
           if (typeof renderAcceptedChatList === 'function') renderAcceptedChatList();
         }
       } catch(ne) { console.error('notif update error:', ne); }
-      // ── ট্রান্সফারের পর চ্যাট মেসেজ মুছো — নতুন এডমিন পরিষ্কার চ্যাট পাবে ──
-      setTimeout(async function() {
-        try {
-          var _mods2 = window._fbModules, _db2 = window._db;
-          // সব messages delete করো
-          var _msgSnap = await _mods2.getDocs(_mods2.collection(_db2, 'applications', appId, 'messages'));
-          var _delP = [];
-          _msgSnap.forEach(function(m){ _delP.push(_mods2.deleteDoc(_mods2.doc(_db2, 'applications', appId, 'messages', m.id))); });
-          await Promise.all(_delP);
-          // files ও chunks delete করো
+      // ── ট্রান্সফারের পর চ্যাট ডিলিট + অটো ওয়েলকাম মেসেজ রিস্টোর ──
+      (function(_aid) {
+        setTimeout(async function() {
           try {
-            var _fSnap = await _mods2.getDocs(_mods2.collection(_db2, 'applications', appId, 'files'));
-            for (var _fi of _fSnap.docs) {
-              var _cSnap = await _mods2.getDocs(_mods2.collection(_db2, 'applications', appId, 'files', _fi.id, 'chunks'));
-              var _cP = []; _cSnap.forEach(function(c){ _cP.push(_mods2.deleteDoc(_mods2.doc(_db2, 'applications', appId, 'files', _fi.id, 'chunks', c.id))); });
-              await Promise.all(_cP);
-              await _mods2.deleteDoc(_mods2.doc(_db2, 'applications', appId, 'files', _fi.id));
-            }
-          } catch(_eF) { console.error('transfer file delete error:', _eF); }
-          // অটো ওয়েলকাম মেসেজ আবার পাঠাও
-          var _wt = (typeof AUTO_WELCOME_MSG !== 'undefined') ? AUTO_WELCOME_MSG : '';
-          if (_wt) {
-            await _mods2.addDoc(_mods2.collection(_db2, 'applications', appId, 'messages'), {
-              from: 'admin', text: _wt, isHtml: false,
-              time: 'এইমাত্র', timeStr: 'এইমাত্র', createdAt: _mods2.serverTimestamp()
+            var _m = window._fbModules, _d = window._db;
+            if (!_m || !_d || !_aid) return;
+            // সব messages delete করো (isAdmin() permission আছে)
+            var _msgSnap = await _m.getDocs(_m.collection(_d, 'applications', _aid, 'messages'));
+            var _delP = [];
+            _msgSnap.forEach(function(msg) {
+              _delP.push(_m.deleteDoc(_m.doc(_d, 'applications', _aid, 'messages', msg.id)));
             });
-          }
-        } catch(eD) { console.error('transfer chat reset error:', eD); }
-      }, 2000);
+            await Promise.all(_delP);
+            // files ও chunks delete করো
+            try {
+              var _fSnap = await _m.getDocs(_m.collection(_d, 'applications', _aid, 'files'));
+              for (var _fi of _fSnap.docs) {
+                var _cSnap = await _m.getDocs(_m.collection(_d, 'applications', _aid, 'files', _fi.id, 'chunks'));
+                var _cP = [];
+                _cSnap.forEach(function(c) { _cP.push(_m.deleteDoc(_m.doc(_d, 'applications', _aid, 'files', _fi.id, 'chunks', c.id))); });
+                await Promise.all(_cP);
+                await _m.deleteDoc(_m.doc(_d, 'applications', _aid, 'files', _fi.id));
+              }
+            } catch(_eF) { console.error('transfer file delete error:', _eF); }
+            // অটো ওয়েলকাম মেসেজ নতুন করে পাঠাও
+            var _wt = (typeof AUTO_WELCOME_MSG !== 'undefined') ? AUTO_WELCOME_MSG : '';
+            if (_wt) {
+              await _m.addDoc(_m.collection(_d, 'applications', _aid, 'messages'), {
+                from: 'admin', text: _wt, isHtml: false,
+                time: 'এইমাত্র', timeStr: 'এইমাত্র', createdAt: _m.serverTimestamp()
+              });
+            }
+          } catch(eD) { console.error('transfer chat reset error:', eD); }
+        }, 1500);
+      })(appId);
       window.closeTransferModal();
       if (typeof chatBackToList === 'function') chatBackToList();
       if (typeof showToast === 'function') showToast('Transfer সম্পন্ন', 'আবেদনটি pool-এ ফিরে গেছে।', 'success');
