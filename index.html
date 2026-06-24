@@ -640,7 +640,7 @@
   // ── নতুন এডমিন Firestore-এ সেভ করো (admins কালেকশন) ──
   window.fbAddAdmin = async function(adminData) {
     try {
-      const ref = doc(db, "admins", String(adminData.id));
+      const ref = doc(db, "admin", String(adminData.id));
       await setDoc(ref, adminData);
       return true;
     } catch(e) {
@@ -677,7 +677,7 @@
   window.fbUpdateAdmin = async function(id, data) {
     try {
       const clean = _fbSanitize(data);
-      await updateDoc(doc(db, "admins", String(id)), clean);
+      await updateDoc(doc(db, "admin", String(id)), clean);
       return true;
     } catch(e) {
       console.error("fbUpdateAdmin error:", e, "data was:", data);
@@ -688,7 +688,7 @@
   // ── একটি এডমিনের সর্বশেষ Firestore data আনো (Super Admin profile view-এ ব্যবহার) ──
   window.fbGetAdminProfile = async function(id, callback) {
     try {
-      const snap = await getDoc(doc(db, "admins", String(id)));
+      const snap = await getDoc(doc(db, "admin", String(id)));
       if (snap.exists()) {
         callback({ id: snap.id, ...snap.data() });
       } else {
@@ -704,7 +704,7 @@
   window.fbDeleteAdmin = async function(id) {
     try {
       const { deleteDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-      await deleteDoc(doc(db, "admins", String(id)));
+      await deleteDoc(doc(db, "admin", String(id)));
       return true;
     } catch(e) {
       console.error("fbDeleteAdmin error:", e);
@@ -714,7 +714,7 @@
 
   // ── সব এডমিন রিয়েলটাইম শোনো (সুপার এডমিন প্যানেল ও লগইন চেকের জন্য) ──
   window.fbListenAdmins = function(callback) {
-    return onSnapshot(collection(db, "admins"), (snap) => {
+    return onSnapshot(collection(db, "admin"), (snap) => {
       const admins = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       callback(admins);
     }, (err) => {
@@ -726,7 +726,7 @@
   window.fbAdminLogin = async function(email, password) {
     try {
       const cred = await signInWithEmailAndPassword(auth, email, password);
-      const adminSnap = await getDoc(doc(db, "admins", cred.user.uid));
+      const adminSnap = await getDoc(doc(db, "admin", cred.user.uid));
       if (adminSnap.exists()) return { id: cred.user.uid, ...adminSnap.data() };
       return null;
     } catch(e) {
@@ -18562,7 +18562,7 @@ async function doLogin() {
           try {
             const { getDoc, doc } = window._fbModules || {};
             if (getDoc && doc) {
-              const snap = await getDoc(doc(window._db, "admins", String(cred.id)));
+              const snap = await getDoc(doc(window._db, "admin", String(cred.id)));
               if (snap && snap.exists && snap.exists()) {
                 const d = snap.data();
                 if (d && d.profileData && d.profileData.setupDone) {
@@ -19398,7 +19398,7 @@ async function pfLoadSensitiveFromFirestore() {
     const adminId = (typeof currentAdmin !== 'undefined' && currentAdmin) ? currentAdmin.id : null;
     if (adminId && window._fbModules && window._db) {
       const { getDoc, doc } = window._fbModules;
-      const snap = await getDoc(doc(window._db, "admins", String(adminId)));
+      const snap = await getDoc(doc(window._db, "admin", String(adminId)));
       if (snap && snap.exists && snap.exists() && snap.data().profileData) {
         saved = snap.data().profileData;
       }
@@ -26343,11 +26343,10 @@ function adminConfirmedLogout() {
         <input type="password" id="saLoginPin" placeholder="••••••" maxlength="100">
       </div>
     </div>
-    <div class="login-error" id="saLoginError"><i class="fas fa-triangle-exclamation"></i> ইমেইল বা পাসওয়ার্ড ভুল। আবার চেষ্টা করুন।</div>
-
     <button class="login-btn" onclick="saDoLogin()">
       <i class="fas fa-right-to-bracket"></i> প্রবেশ করুন
     </button>
+    <div class="login-error" id="saLoginError"><i class="fas fa-triangle-exclamation"></i> ইমেইল বা পাসওয়ার্ড ভুল। আবার চেষ্টা করুন।</div>
     <div class="login-footer">নিরাপদ প্রবেশ · Abedoni সুপার অ্যাডমিন সিস্টেম</div>
   </div>
 </div>
