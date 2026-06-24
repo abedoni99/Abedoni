@@ -634,6 +634,7 @@
       const msgs = snap.docs
         .map(d => ({ id: d.id, ...d.data() }))
         .filter(data => !data.clientOnly)
+        .filter(data => !data.adminOnly)  // ট্রান্সফারের পর হাইড করা মেসেজ নতুন এডমিনও দেখবে না
         .map(data => {
         return {
           id: data.id,
@@ -39176,35 +39177,37 @@ async function clientFileDownload(trackingId, fileDocId, fileName) {
           if (typeof renderAcceptedChatList === 'function') renderAcceptedChatList();
         }
       } catch(ne) { console.error('notif update error:', ne); }
-      // ── ট্রান্সফারের পর চ্যাট ডিলিট + অটো ওয়েলকাম মেসেজ রিস্টোর ──
+      // ── ট্রান্সফারের পর চ্যাট হাইড + অটো ওয়েলকাম মেসেজ রিস্টোর ──
+      // NOTE: Firestore rules-এ সাধারণ admin messages deleteDoc করতে পারে না
+      // (delete: if isSuperAdmin() || isOwnCompletedApp) — তাই updateDoc দিয়ে
+      // adminOnly:true সেট করা হচ্ছে। ক্লায়েন্ট সাইড !m.adminOnly ফিল্টার করে,
+      // তাই ক্লায়েন্টের কাছে ওয়েলকাম ছাড়া আর কোনো মেসেজ দেখাবে না।
       (function(_aid) {
         setTimeout(async function() {
           try {
             var _m = window._fbModules, _d = window._db;
             if (!_m || !_d || !_aid) return;
-            // সব messages delete করো (isAdmin() permission আছে)
+            // সব বিদ্যমান messages-এ adminOnly:true সেট করো
+            // (delete permission নেই, কিন্তু update permission আছে isAdmin()-এর)
             var _msgSnap = await _m.getDocs(_m.collection(_d, 'applications', _aid, 'messages'));
-            var _delP = [];
+            var _hideP = [];
             _msgSnap.forEach(function(msg) {
-              _delP.push(_m.deleteDoc(_m.doc(_d, 'applications', _aid, 'messages', msg.id)));
+              _hideP.push(
+                _m.updateDoc(_m.doc(_d, 'applications', _aid, 'messages', msg.id), {
+                  adminOnly: true
+                }).catch(function(e) {
+                  // update-ও fail হলে (very unlikely) console-এ লগ করো
+                  console.warn('transfer hide msg error:', msg.id, e.code || e.message);
+                })
+              );
             });
-            await Promise.all(_delP);
-            // files ও chunks delete করো
-            try {
-              var _fSnap = await _m.getDocs(_m.collection(_d, 'applications', _aid, 'files'));
-              for (var _fi of _fSnap.docs) {
-                var _cSnap = await _m.getDocs(_m.collection(_d, 'applications', _aid, 'files', _fi.id, 'chunks'));
-                var _cP = [];
-                _cSnap.forEach(function(c) { _cP.push(_m.deleteDoc(_m.doc(_d, 'applications', _aid, 'files', _fi.id, 'chunks', c.id))); });
-                await Promise.all(_cP);
-                await _m.deleteDoc(_m.doc(_d, 'applications', _aid, 'files', _fi.id));
-              }
-            } catch(_eF) { console.error('transfer file delete error:', _eF); }
-            // অটো ওয়েলকাম মেসেজ নতুন করে পাঠাও
+            await Promise.all(_hideP);
+            // অটো ওয়েলকাম মেসেজ নতুন করে পাঠাও (adminOnly ছাড়া — ক্লায়েন্ট দেখবে)
             var _wt = (typeof AUTO_WELCOME_MSG !== 'undefined') ? AUTO_WELCOME_MSG : '';
             if (_wt) {
               await _m.addDoc(_m.collection(_d, 'applications', _aid, 'messages'), {
                 from: 'admin', text: _wt, isHtml: false,
+                adminOnly: false,
                 time: 'এইমাত্র', timeStr: 'এইমাত্র', createdAt: _m.serverTimestamp()
               });
             }
