@@ -4020,6 +4020,15 @@
   background: rgba(201,162,39,0.06);
   box-shadow: 0 0 0 3px rgba(201,162,39,0.12);
 }
+#adminModalOverlay .pw-wrap { position: relative; }
+#adminModalOverlay .pw-wrap input { padding-right: 42px !important; }
+#adminModalOverlay .pw-wrap .eye-btn {
+  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer; padding: 4px;
+  color: rgba(255,255,255,0.4); font-size: 15px;
+  transition: color 0.2s;
+}
+#adminModalOverlay .pw-wrap .eye-btn:hover { color: var(--accent); }
 
 #adminModalOverlay .login-btn {
 
@@ -16522,7 +16531,10 @@ renderAll();
     </div>
     <div class="form-group">
       <label><i class="fas fa-lock"></i>পাসওয়ার্ড</label>
-      <input type="password" id="loginCode" placeholder="পাসওয়ার্ড লিখুন" autocomplete="off">
+      <div class="pw-wrap">
+        <input type="password" id="loginCode" placeholder="পাসওয়ার্ড লিখুন" autocomplete="off">
+        <button type="button" class="eye-btn" onclick="togglePw('loginCode',this)" tabindex="-1"><i class="fas fa-eye"></i></button>
+      </div>
     </div>
 
     <button class="login-btn" onclick="doLogin()">
@@ -24339,6 +24351,14 @@ function adminConfirmedLogout() {
   background: rgba(201,162,39,0.07);
   box-shadow: 0 0 0 3px rgba(201,162,39,0.12);
 }
+#superAdminWrapper .login-input-wrap .eye-btn {
+  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; cursor: pointer; padding: 4px;
+  color: rgba(255,255,255,0.4); font-size: 15px; pointer-events: auto;
+  transition: color 0.2s;
+}
+#superAdminWrapper .login-input-wrap .eye-btn:hover { color: var(--accent); }
+#superAdminWrapper .login-input-wrap input.has-eye { padding-right: 40px; }
 #superAdminWrapper .login-error {
   display: none; font-size: 12.5px; color: #FF6B6B;
   margin-top: 6px; padding: 8px 12px;
@@ -26339,18 +26359,23 @@ function adminConfirmedLogout() {
     </div>
     <div class="login-badge"><span><i class="fas fa-shield-halved"></i> Super Admin Access</span></div>
 
+    <div style="display:none;position:absolute;left:-9999px;">
+      <input type="text" name="fakeuser" tabindex="-1" autocomplete="username">
+      <input type="password" name="fakepass" tabindex="-1" autocomplete="current-password">
+    </div>
     <div class="login-field">
       <label><i class="fas fa-envelope" style="margin-right:6px;font-size:11px;"></i>ইমেইল</label>
       <div class="login-input-wrap">
         <i class="fas fa-envelope"></i>
-        <input type="email" id="saLoginPhone" placeholder="আপনার ইমেইল লিখুন" autocomplete="email" maxlength="100">
+        <input type="email" id="saLoginPhone" placeholder="আপনার ইমেইল লিখুন" autocomplete="off" maxlength="100">
       </div>
     </div>
     <div class="login-field">
       <label><i class="fas fa-lock" style="margin-right:6px;font-size:11px;"></i>পাসওয়ার্ড</label>
       <div class="login-input-wrap">
         <i class="fas fa-lock"></i>
-        <input type="password" id="saLoginPin" placeholder="••••••" maxlength="100">
+        <input type="password" id="saLoginPin" placeholder="••••••" maxlength="100" autocomplete="new-password" class="has-eye">
+        <button type="button" class="eye-btn" onclick="togglePw('saLoginPin',this)" tabindex="-1"><i class="fas fa-eye"></i></button>
       </div>
     </div>
     <button class="login-btn" onclick="saDoLogin()">
@@ -30316,10 +30341,16 @@ function adminConfirmedLogout() {
    Called from main site navbar
 ================================ */
 function openSuperAdminPanel() {
-  // ?debug=1 বা যেকোনো URL param থাকলেও session reset করো — bypass হবে না
-  if (new URLSearchParams(window.location.search).has('debug')) {
-    _sessionToken = null; // in-memory token মুছে দাও
+  // JS in-memory token না থাকলে Firebase Auth থেকে logout করো
+  // এতে Firebase persistent session দিয়েও bypass সম্ভব না
+  if (!_sessionToken) {
     sessionStorage.removeItem('abedoni_sess_v1');
+    try {
+      if (typeof window.fbAdminLogout === 'function') window.fbAdminLogout().catch(function(){});
+    } catch(e) {}
+    // input clear করো
+    try { document.getElementById('saLoginPhone').value = ''; } catch(e) {}
+    try { document.getElementById('saLoginPin').value = ''; } catch(e) {}
   }
   const wrapper = document.getElementById('superAdminWrapper');
   if (!wrapper) return;
@@ -30818,6 +30849,20 @@ function _destroySession() {
   sessionStorage.removeItem('abedoni_logged_in');
 }
 
+function togglePw(inputId, btn) {
+  var inp = document.getElementById(inputId);
+  if (!inp) return;
+  var icon = btn.querySelector('i');
+  if (inp.type === 'password') {
+    inp.type = 'text';
+    if (icon) { icon.classList.remove('fa-eye'); icon.classList.add('fa-eye-slash'); }
+  } else {
+    inp.type = 'password';
+    if (icon) { icon.classList.remove('fa-eye-slash'); icon.classList.add('fa-eye'); }
+  }
+  inp.focus();
+}
+
 function saDoLogin() {
   const email    = document.getElementById('saLoginPhone').value.trim();
   const password = document.getElementById('saLoginPin').value.trim();
@@ -30888,6 +30933,10 @@ function saDoLogin() {
     window.currentAdminRole = currentAdmin.role;
     try { sessionStorage.setItem('adminSession', JSON.stringify(currentAdmin)); } catch(e) {}
     _createSession();
+    // Login সফল হলে input clear এবং regular admin session মুছে দাও
+    try { document.getElementById('saLoginPhone').value = ''; } catch(e) {}
+    try { document.getElementById('saLoginPin').value = ''; } catch(e) {}
+    try { sessionStorage.removeItem('adminSession'); } catch(e) {}
     document.getElementById('loginPage').style.animation = 'fadeOut 0.4s ease forwards';
     setTimeout(() => {
       document.getElementById('loginPage').style.cssText = 'display:none!important';
@@ -30938,14 +30987,12 @@ document.addEventListener('DOMContentLoaded', function() {
       - তাই reload-এর পর session আর valid নয় → login করতে হবে
       - এটাই নিরাপদ আচরণ
     */
-    if (_isSessionValid()) {
-      document.getElementById('loginPage').style.cssText = 'display:none!important';
-      document.getElementById('adminPanel').style.cssText = 'display:flex!important;flex-direction:row!important;width:100%!important;height:100vh!important;overflow:visible!important;position:relative!important;';
-      if (window.innerWidth <= 900) { var _sb2 = document.getElementById('saSidebar'); if (_sb2 && !_sb2.classList.contains('open')) _sb2.style.display=''; }
-      initPanel();
-    }
+    // reload-এ _sessionToken null হয়ে যায় — তাই _isSessionValid() সবসময় false
+    // এটাই সঠিক আচরণ — reload-এ login করতে হবে
+    // (false হলে loginPage দেখানো দরকার নেই, কারণ HTML-এ loginPage default hidden)
     /* পুরনো insecure flag থাকলে মুছে দাও */
     sessionStorage.removeItem('abedoni_logged_in');
+    sessionStorage.removeItem('abedoni_sess_v1'); // reload-এ পুরনো token মুছে দাও
   });
 
   ['saLoginPhone','saLoginPin'].forEach(id => {
@@ -31076,6 +31123,10 @@ function tbGoToAdminChat(id) {
 }
 
 function doLogout() {
+  // logout হলে সব session ও input clear করো
+  try { document.getElementById('saLoginPhone').value = ''; } catch(e) {}
+  try { document.getElementById('saLoginPin').value = ''; } catch(e) {}
+  try { sessionStorage.removeItem('adminSession'); } catch(e) {}
   _destroySession(); // token memory থেকে ও sessionStorage থেকে মুছে দাও
   hideQuickNoteFab();
   document.getElementById('adminPanel').style.display = 'none';
@@ -38386,49 +38437,12 @@ document.addEventListener('keydown', e => {
      রেডি হওয়ার পরে — নাহলে rules-এর request.auth তখনও null থাকায়
      permission-denied এরর আসে। */
   document.addEventListener('DOMContentLoaded', function() {
+    // adminSession sessionStorage মুছে দাও — reload/minimize-এ auto re-login হবে না
+    // প্রতিবার নতুন করে login করতে হবে (security)
+    try { sessionStorage.removeItem('adminSession'); } catch(e) {}
     try {
-      const sess = JSON.parse(sessionStorage.getItem('adminSession') || '{}');
-      if (sess && sess.id) {
-        currentAdmin = sess;
-        window.currentAdminRole = sess.role || 'admin';
-        if (typeof window.adminLoginSuccess === 'function') window.adminLoginSuccess(sess);
-
-        // ── UI রিস্টোর: adminModalOverlay খোলো এবং adminShell দেখাও ──
-        var overlay = document.getElementById('adminModalOverlay');
-        if (overlay) {
-          overlay.style.display = 'block';
-          document.body.style.overflow = 'hidden';
-          if (!history.state || !history.state.adminModalOpen) {
-            history.replaceState({ adminModalOpen: true, panel: 'dashboard' }, '');
-          }
-        }
-        var adminShell = document.getElementById('adminShell');
-        if (adminShell) adminShell.classList.add('show');
-        var loginScreen = document.getElementById('loginScreen');
-        if (loginScreen) loginScreen.style.display = 'none';
-
-        // sidebar নাম আপডেট
-        var spbName = document.getElementById('spbName');
-        if (spbName) spbName.textContent = sess.name || sess.email || '';
-        var sbName = document.getElementById('sidebarName');
-        if (sbName) sbName.textContent = sess.name || sess.email || '';
-
-        // minimize bubble visibility আপডেট
-        if (typeof qnUpdateBubbleVisibility === 'function') qnUpdateBubbleVisibility();
-
-        function _startSessionFbListeners() {
-          startNoticeboard(sess.id);
-          startAppNotifListener(sess.id);
-          startAcceptedChatsListener(sess.id);
-        }
-
-        if (typeof _fbAuthReady === 'function') {
-          _fbAuthReady(_startSessionFbListeners);
-        } else {
-          // _fbAuthReady হেল্পার এখনও লোড না হয়ে থাকলে fallback হিসেবে অপেক্ষা করো
-          setTimeout(_startSessionFbListeners, 1500);
-        }
-      }
+      // Firebase Auth থেকেও logout করো যাতে onAuthStateChanged আর fire না করে
+      if (typeof window.fbAdminLogout === 'function') window.fbAdminLogout().catch(function(){});
     } catch(e) {}
 
     // ── সুপার এডমিনের ছবি Firestore থেকে লোড করো (admin panel saContact card) ──
