@@ -73,6 +73,7 @@
         time: msg.timeStr || msg.time || '',
         timeStr: msg.timeStr || msg.time || '',
         isHtml: false,
+        file: null,
         createdAt: serverTimestamp()
       };
       if (msg.file) payload.file = msg.file;
@@ -136,11 +137,22 @@
             // আগে notification complete করো, তারপর chat delete করো
             setTimeout(async () => {
               try {
+                // app_notifications থেকে acceptedBy নিজেই পড়ো
+                var mods = window._fbModules;
+                var db2 = window._db;
+                var nSnap = await mods.getDocs(mods.query(
+                  mods.collection(db2, 'app_notifications'),
+                  mods.where('appId', '==', id)
+                ));
+                var acceptedBy = data.acceptedBy || '';
+                nSnap.forEach(function(nd) {
+                  if (nd.data().acceptedBy) acceptedBy = nd.data().acceptedBy;
+                });
                 if (typeof window.fbCompleteNotificationByAppId === 'function') {
                   await window.fbCompleteNotificationByAppId(id, {
                     appliedAmount: data.appliedAmount || 0,
                     serviceName: data.serviceName || '',
-                    acceptedBy: data.acceptedBy || ''
+                    acceptedBy: acceptedBy
                   });
                 }
               } catch(e) { console.error('complete notification error:', e); }
