@@ -133,9 +133,9 @@
           // শুধু deliveryCompleted=true AND closedByAdmin নয় (close আলাদাভাবে handle হয়)
           if (data.deliveryCompleted && !data.closedByAdmin && !_cleanupDone.has(id)) {
             _cleanupDone.add(id);
+            // আগে notification complete করো, তারপর chat delete করো
             setTimeout(async () => {
               try {
-                if (typeof window.fbDeleteChatData === 'function') await window.fbDeleteChatData(id);
                 if (typeof window.fbCompleteNotificationByAppId === 'function') {
                   await window.fbCompleteNotificationByAppId(id, {
                     appliedAmount: data.appliedAmount || 0,
@@ -143,8 +143,13 @@
                     acceptedBy: data.acceptedBy || ''
                   });
                 }
-              } catch(e) { console.error('cleanup error:', e); }
-            }, 3000);
+              } catch(e) { console.error('complete notification error:', e); }
+              setTimeout(async () => {
+                try {
+                  if (typeof window.fbDeleteChatData === 'function') await window.fbDeleteChatData(id);
+                } catch(e) { console.error('chat delete error:', e); }
+              }, 2000);
+            }, 1000);
           }
         }
       });
