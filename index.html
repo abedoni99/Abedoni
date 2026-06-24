@@ -16772,6 +16772,22 @@ renderAll();
 
       <!-- শর্তাবলী -->
       <div class="setup-section-label" style="margin-top:24px;">শর্তাবলী ও নীতিমালা</div>
+
+      <!-- কমিশন রেট — শর্তের উপরে বড় করে দেখাও -->
+      <div id="setupCommBanner" style="background:linear-gradient(135deg,#0A2463,#1B3A8C);border-radius:14px;padding:18px 20px;margin-bottom:16px;display:flex;align-items:center;gap:16px;">
+        <div style="background:rgba(201,162,39,0.25);border-radius:50%;width:52px;height:52px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <i class="fas fa-bangladeshi-taka-sign" style="color:#C9A227;font-size:22px;"></i>
+        </div>
+        <div style="flex:1;">
+          <div style="font-size:11px;font-weight:700;color:rgba(255,255,255,0.65);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;font-family:'Inter',sans-serif;">আপনার কমিশন রেট</div>
+          <div style="display:flex;align-items:baseline;gap:6px;">
+            <span id="setupCommRateDisplay" class="stc-comm-rate" style="font-size:36px;font-weight:800;color:#C9A227;font-family:'Inter',sans-serif;line-height:1;">৬৫%</span>
+            <span style="font-size:13px;color:rgba(255,255,255,0.75);font-family:'Hind Siliguri',sans-serif;">প্রতি সফল কাজে</span>
+          </div>
+          <div style="font-size:11.5px;color:rgba(255,255,255,0.6);margin-top:4px;font-family:'Hind Siliguri',sans-serif;">বাকি <span id="setupPlatformRate" style="color:rgba(255,255,255,0.85);font-weight:600;">৩৫%</span> প্ল্যাটফর্মের</div>
+        </div>
+      </div>
+
       <div class="stc-wrap">
         <div class="stc-header">
           <i class="fas fa-file-shield"></i>
@@ -18652,6 +18668,9 @@ function _setupApplyCustomTnC(tnc) {
   document.querySelectorAll('.stc-comm-rate').forEach(function(el) {
     el.textContent = commRate + '%';
   });
+  // ব্যানারে platform rate আপডেট করো
+  var _pr = document.getElementById('setupPlatformRate');
+  if (_pr) _pr.textContent = (100 - commRate) + '%';
   // সর্বোচ্চ কাজ
   const maxJobs = tnc.maxJobs || 3;
   document.querySelectorAll('.stc-max-jobs').forEach(function(el) {
@@ -31745,10 +31764,46 @@ function viewAdminProfile(adminId) {
       if (!fresh) return;
       // state.admins-এ সব fresh ফিল্ড মার্জ করো (profileData, comm, customTnC সহ)
       const stateAdmin = state.admins.find(function(x){ return String(x.id) === String(a.id); });
-      if (stateAdmin) {
-        Object.assign(stateAdmin, fresh);
+      if (stateAdmin) Object.assign(stateAdmin, fresh);
+      // Modal এখনো খোলা থাকলে শুধু ফিল্ডগুলো আপডেট করো — recursive call নয়
+      var _modal = document.getElementById('adminProfileModal');
+      if (_modal && _modal.style.display === 'flex') {
+        var _pd = (stateAdmin && stateAdmin.profileData) || fresh.profileData || {};
+        var _fill = function(id, val) {
+          var el = document.getElementById(id);
+          if (!el) return;
+          if (val) { el.textContent = val; el.classList.remove('apm-empty'); }
+          else { el.textContent = '—'; el.classList.add('apm-empty'); }
+        };
+        if (_pd.avatarData) {
+          var _av = document.getElementById('apmAvatar');
+          if (_av) _av.innerHTML = '<img src="' + _pd.avatarData + '" alt="">';
+        }
+        _fill('apmName', _pd.name || (stateAdmin && stateAdmin.name));
+        var _cp = document.getElementById('apmCodePhone');
+        if (_cp) _cp.textContent = 'কোড: ' + ((stateAdmin && stateAdmin.code) || '—') + ' • ফোন: ' + (_pd.phone || (stateAdmin && stateAdmin.phone) || '—');
+        _fill('apmDob', _pd.dob);
+        _fill('apmMarital', _pd.marital);
+        _fill('apmAddress', _pd.address || _pd.location);
+        _fill('apmNid', _pd.nid);
+        _fill('apmEducation', _pd.education);
+        _fill('apmHeight', _pd.height);
+        _fill('apmWeight', _pd.weight);
+        var _tnc = (stateAdmin && stateAdmin.customTnC) || fresh.customTnC || {};
+        var _cEl = document.getElementById('apmCommRate');
+        if (_cEl) _cEl.textContent = (_tnc.commRate || (stateAdmin && stateAdmin.comm) || fresh.comm || 65) + '%';
+        var _jEl = document.getElementById('apmMaxJobs');
+        if (_jEl) _jEl.textContent = (_tnc.maxJobs || 3) + 'টি';
+        if (_pd.agreedToTnC) {
+          var _badge = document.getElementById('apmTncBadge');
+          if (_badge) { _badge.className = 'apm-badge agreed'; _badge.innerHTML = '<i class="fas fa-circle-check"></i> সম্মত হয়েছেন'; }
+          var _agreedAt = document.getElementById('apmAgreedAt');
+          if (_agreedAt && _pd.agreedAt) {
+            var _d = new Date(_pd.agreedAt);
+            _agreedAt.textContent = 'ডিজিটাল স্বাক্ষর: ' + _d.toLocaleDateString('bn-BD', { year:'numeric', month:'long', day:'numeric', hour:'2-digit', minute:'2-digit' });
+          }
+        }
       }
-      viewAdminProfile(adminId); // re-render with fresh data
       // সুপার এডমিনের টেবিল ও স্ট্যাটস আপডেট করো
       if (typeof renderAdminTable === 'function') renderAdminTable();
       if (typeof updateStats === 'function') updateStats();
@@ -32105,11 +32160,13 @@ async function addAdmin() {
   const adminColor = colors[(state.admins || []).length % colors.length];
 
   // Firebase UID-ই হবে এডমিনের id — লগইনের সময় মিলবে
+  const _adminCode = document.getElementById('newAdminCode').value || genCodeVal();
   const newAdminObj = {
     id:         uid,
     name:       name,
     phone:      phone,
     area:       area,
+    code:       _adminCode,
     comm:       comm,
     role:       'admin',
     status:     'active',
@@ -32142,11 +32199,11 @@ async function addAdmin() {
     return;
   }
 
-  // Local state আলাদাভাবে push করা হচ্ছে না —
-  // Firestore listener (fbListenAdmins) স্বয়ংক্রিয়ভাবে state.admins ও
-  // p3state.chatContacts আপডেট করবে। আগে এখানেও push করা হতো বলেই
-  // লিস্টে একই এডমিন দুইবার দেখাচ্ছিল।
+  // Firestore listener আসার আগে সাথে সাথে লিস্টে দেখানোর জন্য local state-এও যোগ করো।
+  // Listener পরে sync করলে idx !== -1 হবে তাই duplicate হবে না (listener merge করে, push করে না)।
   if (!state.admins) state.admins = [];
+  const _alreadyExists = state.admins.find(function(a){ return String(a.id) === String(newAdminObj.id); });
+  if (!_alreadyExists) state.admins.push(newAdminObj);
 
   closeModal('addAdminModal');
 
