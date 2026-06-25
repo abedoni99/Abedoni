@@ -715,6 +715,58 @@
     }
   };
 
+  // ── এডমিন/সুপার-এডমিনের "পাবলিক" প্রোফাইল কপি (admin_public) সিঙ্ক করো ──
+  // এখানে শুধু name, code, avatarData, role — sensitive কিছু না (rules-এও
+  // এই ৪টা ফিল্ড ছাড়া আর কিছু লেখা/পড়া অনুমোদিত না)। উদ্দেশ্য:
+  // ১) এডমিন↔সুপার-এডমিন একে অপরের চ্যাট-প্রোফাইল ছবি দেখতে পারবে
+  // ২) ক্লায়েন্ট যেই এডমিন আবেদন গ্রহণ করেছে তার নাম/ছবি/কোড দেখতে পারবে
+  // মূল admin/{id} ডকুমেন্টের read rule অপরিবর্তিত — sensitive তথ্য
+  // (phone/nid/address) কারো কাছেই এক্সপোজ হয় না।
+  window.fbSyncAdminPublic = async function(id, info) {
+    try {
+      if (!id || !info || !info.role) return false;
+      const pub = {
+        name: info.name || '',
+        code: info.code || '',
+        avatarData: info.avatarData || '',
+        role: info.role
+      };
+      await setDoc(doc(db, "admin_public", String(id)), pub);
+      return true;
+    } catch(e) {
+      console.warn("fbSyncAdminPublic error:", e);
+      return false;
+    }
+  };
+
+  // ── admin_public থেকে কারো (এডমিন/সুপার-এডমিন) নাম-ছবি-কোড পড়ো (auth ছাড়াই, পাবলিক read) ──
+  window.fbGetAdminPublic = async function(id) {
+    try {
+      const snap = await getDoc(doc(db, "admin_public", String(id)));
+      return snap.exists() ? snap.data() : null;
+    } catch(e) {
+      console.warn("fbGetAdminPublic error:", e);
+      return null;
+    }
+  };
+
+  // ── সুপার-এডমিনের admin_public ডকুমেন্ট খোঁজো (role == super-admin) ──
+  // আগে এটা সরাসরি "admin" কালেকশনে where('role','==','super-admin') কোয়েরি
+  // করত, কিন্তু rules অনুযায়ী unauthenticated ভিজিটর/landing page থেকে
+  // "admin" কালেকশন কখনোই পড়া সম্ভব না — তাই সবসময় permission-denied
+  // আসত। admin_public-এ read:true থাকায় এটা এখন নিরাপদে কাজ করবে।
+  window.fbGetSuperAdminPublic = async function() {
+    try {
+      const qy = query(collection(db, "admin_public"), where("role", "==", "super-admin"));
+      const snap = await getDocs(qy);
+      if (snap.empty) return null;
+      return { id: snap.docs[0].id, ...snap.docs[0].data() };
+    } catch(e) {
+      console.warn("fbGetSuperAdminPublic error:", e);
+      return null;
+    }
+  };
+
   // ── একটি এডমিনের সর্বশেষ Firestore data আনো (Super Admin profile view-এ ব্যবহার) ──
   window.fbGetAdminProfile = async function(id, callback) {
     try {
@@ -749,6 +801,19 @@
       callback(admins);
     }, (err) => {
       console.error("fbListenAdmins error:", err);
+    });
+  };
+
+  // ── admin_public কালেকশন রিয়েলটাইম শোনো (নাম/কোড/ছবি শুধু, auth ছাড়াই) ──
+  // চ্যাট-প্রোফাইল ছবির জন্য এটাই নির্ভরযোগ্য সোর্স — মূল "admin" ডকুমেন্টের
+  // nested profileData.avatarData-এর উপর নির্ভর না করে dedicated, ফ্ল্যাট,
+  // সবসময়-সিঙ্কড একটা সোর্স থেকে পড়া হয়।
+  window.fbListenAdminPublics = function(callback) {
+    return onSnapshot(collection(db, "admin_public"), (snap) => {
+      const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      callback(list);
+    }, (err) => {
+      console.warn("fbListenAdminPublics error:", err);
     });
   };
 
@@ -18611,7 +18676,7 @@ async function doLogin() {
   const _loginComm = (cred.customTnC && cred.customTnC.commRate != null)
     ? cred.customTnC.commRate
     : (cred.comm != null ? cred.comm : null);
-  currentAdmin = { email, name: cred.name || email, id: cred.id, comm: _loginComm, role: cred.role || 'admin' };
+  currentAdmin = { email, name: cred.name || email, id: cred.id, code: cred.code || '', comm: _loginComm, role: cred.role || 'admin' };
   window.currentAdminRole = currentAdmin.role;
 
   // adminSession সেভ করো যাতে page reload এ noticeboard চালু হয়
@@ -18863,6 +18928,16 @@ function setupProfileSubmit() {
       profileData: profileData,
       agreedToTnC: true,
       agreedAt: agreedAt
+    });
+  }
+
+  // ── admin_public-এও নাম/ছবি/কোড সিঙ্ক করো (চ্যাট প্রোফাইল ছবি দেখানোর জন্য) ──
+  if (cred && cred.id && typeof window.fbSyncAdminPublic === 'function') {
+    window.fbSyncAdminPublic(cred.id, {
+      name: profileData.name,
+      code: cred.code || '',
+      avatarData: profileData.avatarData,
+      role: cred.role || 'admin'
     });
   }
 
@@ -22318,7 +22393,11 @@ function sendDeliveryForm() {
         status: 3,
         appliedAmount: chargeNum,
         serviceName: svcVal,
-        acceptedBy: (typeof currentAdmin !== 'undefined' && currentAdmin) ? String(currentAdmin.id) : ''
+        acceptedBy: (typeof currentAdmin !== 'undefined' && currentAdmin) ? String(currentAdmin.id) : '',
+        // ── ক্লায়েন্ট তার চ্যাটে দেখার জন্য — নাম/ছবি/কোড (sensitive কিছু না) ──
+        acceptedByName:  (typeof currentAdmin !== 'undefined' && currentAdmin && currentAdmin.name) || '',
+        acceptedByPhoto: (typeof state !== 'undefined' && state.profile && state.profile.avatarData) || '',
+        acceptedByCode:  (typeof currentAdmin !== 'undefined' && currentAdmin && currentAdmin.code) || ''
       }).catch(function(e){ console.error('sendDeliveryForm applications update error:', e); });
     } catch(e) { console.error('sendDeliveryForm applications update error:', e); }
   } else if (typeof window.fbUpdateStatus === 'function' && _activeChatAppId) {
@@ -30879,6 +30958,27 @@ function _startAdminsFbSync() {
       }
     } catch(e) { console.error('waitForFirebaseAdmins failed:', e); }
   })(20);
+  // ── admin_public থেকেও চ্যাট-কন্টাক্ট ফটো/নাম/কোড সিঙ্ক করো ──
+  // dedicated, ফ্ল্যাট সোর্স — মূল admin ডকুমেন্টের nested profileData-এর
+  // উপর নির্ভরতা কমায়, তাই ছবি আপডেট হলে এখানেও নিশ্চিতভাবে প্রতিফলিত হবে।
+  if (!window._adminPublicsListenerStarted && typeof window.fbListenAdminPublics === 'function') {
+    window._adminPublicsListenerStarted = true;
+    window._adminPublicsFbUnsub = window.fbListenAdminPublics(function(pubs) {
+      try {
+        (pubs || []).forEach(function(p) {
+          if (!p || !p.id || p.role === 'super-admin') return; // সুপার এডমিনের নিজের ছবি এডমিন-লিস্টে দরকার নেই
+          if (!p3state.chatContacts) p3state.chatContacts = [];
+          var cIdx = p3state.chatContacts.findIndex(function(c){ return String(c.id) === String(p.id); });
+          if (cIdx !== -1) {
+            if (p.name) p3state.chatContacts[cIdx].name = p.name;
+            if (p.code) p3state.chatContacts[cIdx].code = p.code;
+            p3state.chatContacts[cIdx].photo = p.avatarData || p3state.chatContacts[cIdx].photo || '';
+          }
+        });
+        if (typeof renderChatContacts === 'function') renderChatContacts();
+      } catch(e) { console.warn('admin_public sync render failed:', e); }
+    });
+  }
   });
 }
 
@@ -31057,6 +31157,7 @@ function saDoLogin() {
       email,
       name: adminData.name || email,
       id: adminData.id,
+      code: adminData.code || '',
       comm: adminData.comm != null ? adminData.comm : null,
       role: adminData.role || 'super-admin'
     };
@@ -37826,6 +37927,15 @@ function _cropConfirm() {
   if (typeof window.fbUpdateAdmin === 'function' && currentAdmin && currentAdmin.id) {
     window.fbUpdateAdmin(currentAdmin.id, { 'profileData.avatarData': data });
   }
+  // ── admin_public-এও ছবি সিঙ্ক করো (এডমিনরা চ্যাটে এই ছবি দেখবে) ──
+  if (typeof window.fbSyncAdminPublic === 'function' && currentAdmin && currentAdmin.id) {
+    window.fbSyncAdminPublic(currentAdmin.id, {
+      name: currentAdmin.name || '',
+      code: currentAdmin.code || '',
+      avatarData: data,
+      role: currentAdmin.role || 'super-admin'
+    });
+  }
   p3Toast('প্রোফাইল ছবি সেট হয়েছে','success');
 }
 
@@ -38214,6 +38324,15 @@ function pfSyncAvatarToFirestore(dataUrlOrNull) {
   if (typeof currentAdmin === 'undefined' || !currentAdmin || !currentAdmin.id) return;
   if (typeof window.fbUpdateAdmin !== 'function') return;
   window.fbUpdateAdmin(currentAdmin.id, { 'profileData.avatarData': dataUrlOrNull || null });
+  // ── admin_public-এও ছবি সিঙ্ক করো (সুপার এডমিন এই ছবি চ্যাট লিস্টে দেখবে) ──
+  if (typeof window.fbSyncAdminPublic === 'function') {
+    window.fbSyncAdminPublic(currentAdmin.id, {
+      name: currentAdmin.name || (state.profile && state.profile.name) || '',
+      code: currentAdmin.code || (state.profile && state.profile.code) || '',
+      avatarData: dataUrlOrNull || '',
+      role: currentAdmin.role || 'admin'
+    });
+  }
 }
 
 function pfRemoveAvatar() {
@@ -38350,6 +38469,8 @@ function saMinimizePanel() {
   window._adminsListenerStarted = false;
   if (typeof window._chatAdminsFbUnsub === 'function') { try { window._chatAdminsFbUnsub(); } catch(e){} window._chatAdminsFbUnsub = null; }
   window._chatAdminsListenerStarted = false;
+  if (typeof window._adminPublicsFbUnsub === 'function') { try { window._adminPublicsFbUnsub(); } catch(e){} window._adminPublicsFbUnsub = null; }
+  window._adminPublicsListenerStarted = false;
   // ── প্রতিটা এডমিনের সাথে খোলা ব্যক্তিগত চ্যাটের listener-ও বন্ধ করো ──
   // Super Admin যদি কোনো এডমিনের সাথে চ্যাট খুলে রেখে মিনিমাইজ করেন,
   // sa_chat/<adminId>/messages শোনার এই listener-গুলো (_admChatUnsubs)
@@ -38692,17 +38813,17 @@ document.addEventListener('keydown', e => {
     })(15);
 
     // ── সুপার এডমিনের ছবি Firestore থেকে লোড করো (admin panel saContact card) ──
+    // আগে এটা সরাসরি "admin" কালেকশনে (auth-protected, sensitive) কোয়েরি
+    // করত, যা auth==null অবস্থায় (পেজ লোডের সময় সবসময়ই, কারণ একটু আগেই
+    // জোর করে logout করা হলো) rules অনুযায়ী permission-denied দিতই —
+    // এটাই কনসোলে "SA photo load error" এর কারণ ছিল। এখন admin_public
+    // (read: true, শুধু name/code/avatarData/role) থেকে পড়া হচ্ছে, যা
+    // sensitive কিছু এক্সপোজ না করেই auth ছাড়াও নিরাপদে কাজ করবে।
     setTimeout(function loadSAPhoto() {
-      if (typeof window._db === 'undefined' || !window._fbModules) return;
-      const { getDocs, query, where, collection } = window._fbModules;
-      if (!getDocs || !collection) return;
-      import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js').then(function(m) {
-        const q = m.query(m.collection(window._db, 'admin'), m.where('role', '==', 'super-admin'));
-        return m.getDocs(q);
-      }).then(function(snap) {
-        if (snap && !snap.empty) {
-          const saData = snap.docs[0].data();
-          const saPhoto = (saData.profileData && saData.profileData.avatarData) || '';
+      if (typeof window.fbGetSuperAdminPublic !== 'function') return;
+      window.fbGetSuperAdminPublic().then(function(saData) {
+        if (saData) {
+          const saPhoto = saData.avatarData || '';
           const saName = saData.name || 'Super Admin';
           // saContact avatar আপডেট করো (Admin Panel chat list)
           const saAvatarEl = document.querySelector('#saContact .c-avatar');
