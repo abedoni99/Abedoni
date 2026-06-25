@@ -38350,6 +38350,17 @@ function saMinimizePanel() {
   window._adminsListenerStarted = false;
   if (typeof window._chatAdminsFbUnsub === 'function') { try { window._chatAdminsFbUnsub(); } catch(e){} window._chatAdminsFbUnsub = null; }
   window._chatAdminsListenerStarted = false;
+  // ── প্রতিটা এডমিনের সাথে খোলা ব্যক্তিগত চ্যাটের listener-ও বন্ধ করো ──
+  // Super Admin যদি কোনো এডমিনের সাথে চ্যাট খুলে রেখে মিনিমাইজ করেন,
+  // sa_chat/<adminId>/messages শোনার এই listener-গুলো (_admChatUnsubs)
+  // আগে বন্ধ হতো না — এডমিন প্যানেলে গিয়ে অন্য একাউন্টে লগইন করার পর
+  // এগুলোও পুরোনো auth context-এ permission-denied দিয়ে স্প্যাম করত।
+  if (typeof _admChatUnsubs === 'object' && _admChatUnsubs) {
+    Object.keys(_admChatUnsubs).forEach(function(k){
+      try { if (typeof _admChatUnsubs[k] === 'function') _admChatUnsubs[k](); } catch(e){}
+      delete _admChatUnsubs[k];
+    });
+  }
   const wrapper = document.getElementById('superAdminWrapper');
   if (wrapper) wrapper.style.display = 'none';
   document.body.style.overflow = '';
