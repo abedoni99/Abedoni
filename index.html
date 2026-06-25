@@ -24,7 +24,18 @@
     measurementId: "G-QQ5F85863M"
   };
 
-  const app = initializeApp(firebaseConfig);
+  // ── প্রতিটা ব্রাউজার ট্যাবের জন্য আলাদা/ইউনিক নামের Firebase App ──
+  // কারণ: Firebase Auth ডিফল্টে একই app instance-এর sign-in/sign-out state
+  // ব্রাউজারের সব ট্যাবে broadcast করে দেয় (একই authDomain/project হওয়ায়)।
+  // ফলে একই ব্রাউজারে এক ট্যাবে Super Admin আর অন্য ট্যাবে সাধারণ Admin লগইন
+  // থাকলে, এডমিন ট্যাবে কিছু করার সাথে সাথে Super Admin-এর ট্যাবের auth.uid-ও
+  // চুপচাপ এডমিনের uid দিয়ে বদলে যেত — এতে Super Admin-এর "admin" কালেকশন
+  // লিস্ট-শোনা (isSuperAdmin() rule) হঠাৎ permission-denied দিতে শুরু করত,
+  // আর সেই বারবার-ব্যর্থ listener-ই চ্যাট লিস্ট/ইনবক্স ব্লিংক ও আটকে যাওয়ার
+  // কারণ ছিল। ইউনিক app নাম দিলে প্রতিটা ট্যাবের Auth instance সম্পূর্ণ
+  // আলাদা/isolated থাকে — এক ট্যাবের লগইন/লগআউট অন্য ট্যাবকে প্রভাবিত করবে না।
+  const _tabAppName = 'tab_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+  const app = initializeApp(firebaseConfig, _tabAppName);
   const auth = getAuth(app);
   // Tab বন্ধ হলেই Firebase Auth session শেষ হবে — localStorage-এ session টিকবে না
   setPersistence(auth, browserSessionPersistence).catch(e => console.warn('setPersistence error:', e));
@@ -8948,60 +8959,6 @@
     <div class="shape shape-4"></div>
   </div>
 
-  <!-- Admin মিনিমাইজ করার পর এই বাটন দেখা যাবে -->
-  <div id="returnToAdminBtn" style="display:none; position:fixed; bottom:80px; right:16px; z-index:2147483640;">
-    <button onclick="adminReturnToPanel()" title="অ্যাডমিনে ফিরুন" style="
-      display:flex; align-items:center; justify-content:center;
-      width:44px; height:44px;
-      background: linear-gradient(135deg, var(--primary), var(--primary-light));
-      color: var(--accent-light);
-      border: 1.5px solid rgba(201,162,39,0.45);
-      border-radius: 50%;
-      cursor: pointer;
-      box-shadow: 0 4px 18px rgba(10,36,99,0.5), 0 0 0 0 rgba(201,162,39,0.3);
-      transition: transform 0.22s ease, box-shadow 0.22s ease;
-      animation: adminReturnPulse 2.5s ease-in-out infinite;
-      padding: 0;
-    "
-    onmouseover="this.style.transform='scale(1.12)';"
-    onmouseout="this.style.transform='';">
-      <i class="fas fa-user-shield" style="font-size:18px; pointer-events:none;"></i>
-    </button>
-  </div>
-  <style>
-  @keyframes adminReturnPulse {
-    0%, 100% { box-shadow: 0 4px 18px rgba(10,36,99,0.55), 0 0 0 0 rgba(201,162,39,0.35); }
-    60% { box-shadow: 0 4px 18px rgba(10,36,99,0.55), 0 0 0 9px rgba(201,162,39,0); }
-  }
-  </style>
-
-  <div id="returnToSuperAdminBtn" style="display:none; position:fixed; bottom:80px; right:16px; z-index:2147483640;">
-    <button onclick="saReturnToPanel()" title="সুপার অ্যাডমিনে ফিরুন" style="
-      display:flex; align-items:center; justify-content:center;
-      width:44px; height:44px;
-      background: linear-gradient(135deg, #1A3A8C, #2E5FD9);
-      color: #fff;
-      border: 1.5px solid rgba(100,160,255,0.4);
-      border-radius: 50%;
-      cursor: pointer;
-      box-shadow: 0 4px 18px rgba(26,58,140,0.55);
-      transition: transform 0.22s ease, box-shadow 0.22s ease;
-      animation: saReturnPulse 2.8s ease-in-out infinite;
-      padding: 0;
-    "
-    onmouseover="this.style.transform='scale(1.12)'; this.style.boxShadow='0 6px 24px rgba(46,95,217,0.7)';"
-    onmouseout="this.style.transform=''; this.style.boxShadow='0 4px 18px rgba(26,58,140,0.55)';">
-      <i class="fas fa-shield-halved" style="font-size:18px; pointer-events:none;"></i>
-    </button>
-  </div>
-
-  <style>
-  @keyframes saReturnPulse {
-    0%, 100% { box-shadow: 0 4px 18px rgba(26,58,140,0.55), 0 0 0 0 rgba(46,95,217,0.35); }
-    60% { box-shadow: 0 4px 18px rgba(26,58,140,0.55), 0 0 0 8px rgba(46,95,217,0); }
-  }
-  </style>
-
   <div class="hero-inner">
     <div class="hero-content">
       <div class="hero-badge">
@@ -9097,6 +9054,62 @@
     </div>
   </div>
 </section>
+
+<!-- Admin মিনিমাইজ করার পর এই বাটন দেখা যাবে — .hero সেকশনের বাইরে রাখা হয়েছে
+     যাতে .hero-এর overflow:hidden/isolation:isolate এই position:fixed বাটনকে
+     মোবাইলে (hero-এর height ছোট হয়ে যাওয়ার পর) ক্লিপ করে অদৃশ্য করে না দেয় -->
+<div id="returnToAdminBtn" style="display:none; position:fixed; bottom:80px; right:16px; z-index:2147483640;">
+  <button onclick="adminReturnToPanel()" title="অ্যাডমিনে ফিরুন" style="
+    display:flex; align-items:center; justify-content:center;
+    width:44px; height:44px;
+    background: linear-gradient(135deg, var(--primary), var(--primary-light));
+    color: var(--accent-light);
+    border: 1.5px solid rgba(201,162,39,0.45);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 4px 18px rgba(10,36,99,0.5), 0 0 0 0 rgba(201,162,39,0.3);
+    transition: transform 0.22s ease, box-shadow 0.22s ease;
+    animation: adminReturnPulse 2.5s ease-in-out infinite;
+    padding: 0;
+  "
+  onmouseover="this.style.transform='scale(1.12)';"
+  onmouseout="this.style.transform='';">
+    <i class="fas fa-user-shield" style="font-size:18px; pointer-events:none;"></i>
+  </button>
+</div>
+<style>
+@keyframes adminReturnPulse {
+  0%, 100% { box-shadow: 0 4px 18px rgba(10,36,99,0.55), 0 0 0 0 rgba(201,162,39,0.35); }
+  60% { box-shadow: 0 4px 18px rgba(10,36,99,0.55), 0 0 0 9px rgba(201,162,39,0); }
+}
+</style>
+
+<div id="returnToSuperAdminBtn" style="display:none; position:fixed; bottom:80px; right:16px; z-index:2147483640;">
+  <button onclick="saReturnToPanel()" title="সুপার অ্যাডমিনে ফিরুন" style="
+    display:flex; align-items:center; justify-content:center;
+    width:44px; height:44px;
+    background: linear-gradient(135deg, #1A3A8C, #2E5FD9);
+    color: #fff;
+    border: 1.5px solid rgba(100,160,255,0.4);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 4px 18px rgba(26,58,140,0.55);
+    transition: transform 0.22s ease, box-shadow 0.22s ease;
+    animation: saReturnPulse 2.8s ease-in-out infinite;
+    padding: 0;
+  "
+  onmouseover="this.style.transform='scale(1.12)'; this.style.boxShadow='0 6px 24px rgba(46,95,217,0.7)';"
+  onmouseout="this.style.transform=''; this.style.boxShadow='0 4px 18px rgba(26,58,140,0.55)';">
+    <i class="fas fa-shield-halved" style="font-size:18px; pointer-events:none;"></i>
+  </button>
+</div>
+
+<style>
+@keyframes saReturnPulse {
+  0%, 100% { box-shadow: 0 4px 18px rgba(26,58,140,0.55), 0 0 0 0 rgba(46,95,217,0.35); }
+  60% { box-shadow: 0 4px 18px rgba(26,58,140,0.55), 0 0 0 8px rgba(46,95,217,0); }
+}
+</style>
 
 <section class="info-section" id="how-it-works" style="padding-bottom:0;">
   <div class="section-inner">
@@ -30785,7 +30798,7 @@ function _startAdminsFbSync() {
   (function waitForFirebaseAdmins(retries) {
     try {
       if (typeof window.fbListenAdmins === 'function') {
-        window.fbListenAdmins(function(fsAdmins) {
+        window._adminsFbUnsub = window.fbListenAdmins(function(fsAdmins) {
           try {
             /* demo এডমিনের phone নম্বর ও id — Firestore থেকে আসলেও বাদ দাও */
             const _demoPhones = ['01711111111','01722222222','01733333333','01744444444'];
@@ -36964,7 +36977,7 @@ function initChat() {
   if (typeof window.fbListenAdmins === 'function' && !window._chatAdminsListenerStarted) {
     window._chatAdminsListenerStarted = true;
     var _attachChatAdminsListener = function() {
-    window.fbListenAdmins(function(fsAdmins) {
+    window._chatAdminsFbUnsub = window.fbListenAdmins(function(fsAdmins) {
       if (!fsAdmins || fsAdmins.length === 0) return;
       var colors = ['#1B3A8C','#2F6B4F','#7B2FBE','#C0392B','#C9A227','#2471A3','#1E8449'];
       fsAdmins.forEach(function(fa) {
@@ -38324,6 +38337,19 @@ function saRunBingSearch() {
 ================================================================ */
 function saMinimizePanel() {
   window._saMinimized = true;
+  // ── Super Admin-এর ব্যাকগ্রাউন্ড Firebase listener বন্ধ করো ──
+  // মিনিমাইজ করলে #superAdminWrapper শুধু লুকানো হয়, কিন্তু এর নিচে চলতে
+  // থাকা admin-কালেকশন listener বন্ধ হতো না। ফলে এডমিন প্যানেলে গিয়ে
+  // আলাদা (এডমিন) একাউন্টে লগইন করলে সেই sign-in একই Firebase Auth-এর
+  // Super Admin সেশনকে প্রতিস্থাপন করে দিতো — আর Super Admin-এর পুরোনো
+  // listener তখন ভুল/নতুন auth context-এ permission-denied পেতে শুরু
+  // করত, যা চ্যাট লিস্ট ব্লিংক ও UI আটকে যাওয়ার কারণ ছিল। এখন মিনিমাইজ
+  // করার সময়ই এই listener-গুলো unsubscribe করে দেওয়া হয়, এবং পরে
+  // ফিরে এলে (saReturnToPanel) প্রয়োজনে ফ্রেশভাবে আবার চালু হবে।
+  if (typeof window._adminsFbUnsub === 'function') { try { window._adminsFbUnsub(); } catch(e){} window._adminsFbUnsub = null; }
+  window._adminsListenerStarted = false;
+  if (typeof window._chatAdminsFbUnsub === 'function') { try { window._chatAdminsFbUnsub(); } catch(e){} window._chatAdminsFbUnsub = null; }
+  window._chatAdminsListenerStarted = false;
   const wrapper = document.getElementById('superAdminWrapper');
   if (wrapper) wrapper.style.display = 'none';
   document.body.style.overflow = '';
@@ -38360,6 +38386,22 @@ function saReturnToPanel() {
   document.querySelectorAll('.navbar, .mobile-menu, .mobile-bottom-nav, .fab-btn, .whatsapp-float, .scroll-top, [class*="float"], [class*="fab"]').forEach(function(el){
     if (!el.closest('#superAdminWrapper')) el.style.setProperty('display', 'none', 'important');
   });
+  // ── ব্যাকগ্রাউন্ডে এডমিন প্যানেল থেকে অন্য একাউন্টে লগইন হয়ে থাকলে এই
+  //    ট্যাবের Firebase Auth সেশন আর Super Admin-এর নয়। তাই ফিরে আসার
+  //    সময় currentAdmin/role যাচাই করে দেখা হচ্ছে — Super Admin সেশন
+  //    আর বৈধ না থাকলে আবার লগইন স্ক্রিনে পাঠানো হচ্ছে, যাতে ভাঙা/পুরোনো
+  //    auth দিয়ে চুপচাপ listener চালু না হয়ে যায়। ──
+  const _saStillValid = typeof currentAdmin !== 'undefined' && currentAdmin && currentAdmin.role === 'super-admin';
+  if (!_saStillValid) {
+    const adminPanel = document.getElementById('adminPanel');
+    const loginPage  = document.getElementById('loginPage');
+    if (adminPanel) adminPanel.style.cssText = 'display:none!important;';
+    if (loginPage)  { loginPage.style.animation = ''; loginPage.style.cssText = 'display:-webkit-box!important;display:-ms-flexbox!important;display:flex!important;-webkit-box-align:center;-ms-flex-align:center;align-items:center;-webkit-box-pack:center;-ms-flex-pack:center;justify-content:center;position:fixed!important;inset:0!important;z-index:999999!important;'; }
+    if (typeof showToast === 'function') showToast('আবার লগইন করুন', 'এই ট্যাবে অন্য একাউন্টে লগইন হয়েছিল, Super Admin সেশন আর বৈধ নেই।', 'error');
+    return;
+  }
+  // সেশন এখনো বৈধ — listener চালু না থাকলে ফ্রেশভাবে চালু করো
+  if (typeof _startAdminsFbSync === 'function') _startAdminsFbSync();
 }
 
 function saLogoutConfirm() {
