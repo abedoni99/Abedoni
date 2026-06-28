@@ -8789,6 +8789,7 @@
 @media (min-width: 769px) {
   .sa-wa-back-btn { display: none !important; }
   .desktop-only { display: flex !important; }
+  .mobile-only-flex { display: none !important; }
 
   /* Section-head-ot padding সরাও */
   #superAdminWrapper #sec-liveChat > .section-head { display: none !important; }
@@ -8820,6 +8821,7 @@
   /* মোবাইলে back button দেখাও */
   .sa-wa-back-btn { display: flex !important; }
   .desktop-only { display: none !important; }
+  .mobile-only-flex { display: flex !important; }
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -8868,6 +8870,7 @@
   }
   #superAdminWrapper #sec-liveChat .sa-wa-back-btn { display: none !important; }
   #superAdminWrapper #sec-liveChat .desktop-only { display: flex !important; }
+  #superAdminWrapper #sec-liveChat .mobile-only-flex { display: none !important; }
 }
 
 /* Mobile: sidebar full → chat-active → fullscreen inbox */
@@ -8896,6 +8899,7 @@
   /* Back button দেখাও */
   #superAdminWrapper #sec-liveChat .sa-wa-back-btn { display: flex !important; }
   #superAdminWrapper #sec-liveChat .desktop-only { display: none !important; }
+  #superAdminWrapper #sec-liveChat .mobile-only-flex { display: flex !important; }
   /* chat-active অবস্থায় topbar ও bottom nav লুকাও (JS saHideChrome করে, কিন্তু extra safety) */
   #superAdminWrapper.inbox-open .sa-layout-topbar { display: none !important; }
   #superAdminWrapper.inbox-open #saMobileBottomNav { display: none !important; }
@@ -27774,7 +27778,11 @@ function adminConfirmedLogout() {
         <span style="font-size:16px;font-weight:700;color:#fff;">চ্যাট</span>
       </div>
       <div style="display:flex;gap:6px;">
-        <button onclick="chatSwitchTab('broadcast')" title="ব্রডকাস্ট" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.14);border:none;cursor:pointer;color:#fff;font-size:14px;display:flex;align-items:center;justify-content:center;" title="ব্রডকাস্ট"><i class="fas fa-bullhorn"></i></button>
+        <button onclick="chatSwitchTab('broadcast')" title="ব্রডকাস্ট" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.14);border:none;cursor:pointer;color:#fff;font-size:14px;display:flex;align-items:center;justify-content:center;"><i class="fas fa-bullhorn"></i></button>
+        <!-- ডেস্কটপে মিনিমাইজ বাটন -->
+        <button class="desktop-only" onclick="saExitLiveChat()" title="মিনিমাইজ / পিছনে যান" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.14);border:none;cursor:pointer;color:#fff;font-size:15px;display:flex;align-items:center;justify-content:center;transition:background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.28)'" onmouseout="this.style.background='rgba(255,255,255,0.14)'"><i class="fas fa-minus"></i></button>
+        <!-- ডেস্কটপে ব্যাক বাটন -->
+        <button class="desktop-only" onclick="saExitLiveChat()" title="ড্যাশবোর্ডে ফিরুন" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.14);border:none;cursor:pointer;color:#fff;font-size:15px;display:flex;align-items:center;justify-content:center;transition:background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.28)'" onmouseout="this.style.background='rgba(255,255,255,0.14)'"><i class="fas fa-arrow-left"></i></button>
       </div>
     </div>
     <!-- Search -->
@@ -27806,8 +27814,8 @@ function adminConfirmedLogout() {
         <div class="sa-wa-main-status" id="chatHeaderStatus">অনলাইন</div>
       </div>
       <div style="display:flex;gap:6px;">
-        <!-- ডেস্কটপে close অপশন -->
-        <button class="sa-wa-hd-btn desktop-only" onclick="saDesktopCloseConv()" title="কথোপকথন বন্ধ করুন"><i class="fas fa-xmark"></i></button>
+        <!-- মোবাইলে মিনিমাইজ বাটন (ইনবক্স হেডারে) -->
+        <button class="sa-wa-hd-btn mobile-only-flex" onclick="saGoBackToList()" title="চ্যাট লিস্টে ফিরুন" style="display:none;"><i class="fas fa-minus"></i></button>
       </div>
     </div>
 
