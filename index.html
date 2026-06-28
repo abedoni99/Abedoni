@@ -8873,10 +8873,11 @@
   animation: none !important; transform: none !important;
 }
 @media (max-width: 768px) {
-  #superAdminWrapper #sec-liveChat.active { height: calc(100dvh - 64px - 56px) !important; }
+  /* topbar/bottom-nav লুকানো থাকে বলে পুরো 100dvh */
+  #superAdminWrapper #sec-liveChat.active { height: 100dvh !important; }
 }
 @media (max-width: 600px) {
-  #superAdminWrapper #sec-liveChat.active { height: calc(100dvh - 56px - 56px) !important; }
+  #superAdminWrapper #sec-liveChat.active { height: 100dvh !important; }
 }
 
 #superAdminWrapper #sec-liveChat > #chatPanelIndividual {
@@ -8957,6 +8958,13 @@
     overflow: hidden !important;
     position: fixed !important;
     width: 100% !important;
+    overscroll-behavior: none !important;
+    touch-action: none !important;
+  }
+  body.sa-inbox-open .sa-wa-main,
+  body.sa-inbox-open #saChatMessages {
+    overscroll-behavior: contain !important;
+    touch-action: pan-y !important;
   }
 }
 
@@ -27820,7 +27828,7 @@ function adminConfirmedLogout() {
         <!-- ডেস্কটপে ব্যাক বাটন -->
         <button class="desktop-only" onclick="saExitLiveChat()" title="ড্যাশবোর্ডে ফিরুন" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.14);border:none;cursor:pointer;color:#fff;font-size:15px;display:flex;align-items:center;justify-content:center;transition:background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.28)'" onmouseout="this.style.background='rgba(255,255,255,0.14)'"><i class="fas fa-arrow-left"></i></button>
         <!-- মোবাইলে চ্যাটলিস্ট হেডারে ড্যাশবোর্ড বাটন -->
-        <button class="mobile-only-flex" onclick="saExitLiveChat()" title="ড্যাশবোর্ডে ফিরুন" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.14);border:none;cursor:pointer;color:#fff;font-size:15px;align-items:center;justify-content:center;transition:background 0.15s;display:none;" onmouseover="this.style.background='rgba(255,255,255,0.28)'" onmouseout="this.style.background='rgba(255,255,255,0.14)'"><i class="fas fa-arrow-left"></i></button>
+        <button class="mobile-only-flex" onclick="saExitLiveChat()" title="ড্যাশবোর্ডে ফিরুন" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.14);border:none;cursor:pointer;color:#fff;font-size:15px;align-items:center;justify-content:center;transition:background 0.15s;display:none;" onmouseover="this.style.background='rgba(255,255,255,0.28)'" onmouseout="this.style.background='rgba(255,255,255,0.14)'"><i class="fas fa-minus"></i></button>
       </div>
     </div>
     <!-- Search -->
@@ -27853,7 +27861,7 @@ function adminConfirmedLogout() {
       </div>
       <div style="display:flex;gap:6px;">
         <!-- মোবাইলে ইনবক্স থেকে চ্যাটলিস্টে ফিরুন (back arrow) -->
-        <button class="sa-wa-hd-btn mobile-only-flex" onclick="saGoBackToList()" title="চ্যাট লিস্টে ফিরুন" style="display:none;"><i class="fas fa-arrow-left"></i></button>
+        <button class="sa-wa-hd-btn mobile-only-flex" onclick="saExitLiveChat()" title="ড্যাশবোর্ডে ফিরুন" style="display:none;"><i class="fas fa-minus"></i></button>
       </div>
     </div>
 
@@ -35214,6 +35222,8 @@ function saExitLiveChat() {
   if (typeof saDesktopCloseConv === 'function') saDesktopCloseConv();
   const saBackBtn = document.getElementById('saLiveChatBackBtn');
   if (saBackBtn) saBackBtn.style.display = 'none';
+  // মোবাইলে chrome ফিরিয়ে দাও আগে
+  if (window.innerWidth <= 768 && typeof saShowChrome === 'function') saShowChrome();
   goTo('dashboard', document.querySelector('#superAdminWrapper .sb-item[onclick*="dashboard"]') || null);
   // নিচে ডানে chat bubble দেখাও
   const bbl = document.getElementById('saLiveChatMiniBubble');
@@ -35253,6 +35263,7 @@ window.addEventListener('popstate', function(e) {
     window._saGoToFromPopstate = true;
     const saBackBtn = document.getElementById('saLiveChatBackBtn');
     if (saBackBtn) saBackBtn.style.display = 'none';
+    if (window.innerWidth <= 768 && typeof saShowChrome === 'function') saShowChrome();
     goTo('dashboard', null);
     window._saGoToFromPopstate = false;
     // পরের back-এ SA panel থেকে বের হওয়া আটকাতে dashboard state push করো
@@ -37200,6 +37211,8 @@ function initChat() {
   // chat-active সরিয়ে sidebar দেখাও (mobile এ)
   var layout = document.getElementById('saWaLayout');
   if (layout) layout.classList.remove('chat-active');
+  // মোবাইলে চ্যাটলিস্ট fullscreen — topbar/bottom-nav লুকাও
+  if (window.innerWidth <= 768 && typeof saHideChrome === 'function') saHideChrome();
   // broadcast mode reset
   var secLiveChat = document.getElementById('sec-liveChat');
   if (secLiveChat) secLiveChat.classList.remove('broadcast-active');
@@ -37612,6 +37625,8 @@ function saHideChrome() {
   if (wrapper) wrapper.classList.add('inbox-open');
   document.body.classList.add('sa-inbox-open');
   document.documentElement.style.overflow = 'hidden';
+  document.documentElement.style.overscrollBehavior = 'none';
+  document.body.style.overscrollBehavior = 'none';
   // মোবাইলে back বাটন দিয়ে ফেরার জন্য history push করো
   if (!window._inboxHistoryPushed) {
     window._inboxHistoryPushed = true;
@@ -37632,6 +37647,8 @@ function saShowChrome() {
   if (wrapper) wrapper.classList.remove('inbox-open');
   document.body.classList.remove('sa-inbox-open');
   document.documentElement.style.overflow = '';
+  document.documentElement.style.overscrollBehavior = '';
+  document.body.style.overscrollBehavior = '';
   window._inboxHistoryPushed = false;
 }
 
