@@ -27780,9 +27780,11 @@ function adminConfirmedLogout() {
       <div style="display:flex;gap:6px;">
         <button onclick="chatSwitchTab('broadcast')" title="ব্রডকাস্ট" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.14);border:none;cursor:pointer;color:#fff;font-size:14px;display:flex;align-items:center;justify-content:center;"><i class="fas fa-bullhorn"></i></button>
         <!-- ডেস্কটপে মিনিমাইজ বাটন -->
-        <button class="desktop-only" onclick="saExitLiveChat()" title="মিনিমাইজ / পিছনে যান" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.14);border:none;cursor:pointer;color:#fff;font-size:15px;display:flex;align-items:center;justify-content:center;transition:background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.28)'" onmouseout="this.style.background='rgba(255,255,255,0.14)'"><i class="fas fa-minus"></i></button>
+        <button class="desktop-only" onclick="saMinimizePanel()" title="মিনিমাইজ — লগইন থাকবে" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.14);border:none;cursor:pointer;color:#fff;font-size:15px;display:flex;align-items:center;justify-content:center;transition:background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.28)'" onmouseout="this.style.background='rgba(255,255,255,0.14)'"><i class="fas fa-minus"></i></button>
         <!-- ডেস্কটপে ব্যাক বাটন -->
-        <button class="desktop-only" onclick="saExitLiveChat()" title="ড্যাশবোর্ডে ফিরুন" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.14);border:none;cursor:pointer;color:#fff;font-size:15px;display:flex;align-items:center;justify-content:center;transition:background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.28)'" onmouseout="this.style.background='rgba(255,255,255,0.14)'"><i class="fas fa-arrow-left"></i></button>
+        <button class="desktop-only" onclick="saMinimizePanel()" title="মিনিমাইজ — লগইন থাকবে" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.14);border:none;cursor:pointer;color:#fff;font-size:15px;display:flex;align-items:center;justify-content:center;transition:background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.28)'" onmouseout="this.style.background='rgba(255,255,255,0.14)'"><i class="fas fa-arrow-left"></i></button>
+        <!-- মোবাইলে চ্যাটলিস্ট হেডারে মিনিমাইজ বাটন -->
+        <button class="mobile-only-flex" onclick="saMinimizePanel()" title="মিনিমাইজ — লগইন থাকবে" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.14);border:none;cursor:pointer;color:#fff;font-size:15px;align-items:center;justify-content:center;transition:background 0.15s;display:none;" onmouseover="this.style.background='rgba(255,255,255,0.28)'" onmouseout="this.style.background='rgba(255,255,255,0.14)'"><i class="fas fa-minus"></i></button>
       </div>
     </div>
     <!-- Search -->
@@ -38580,18 +38582,15 @@ function saReturnToPanel() {
   document.querySelectorAll('.navbar, .mobile-menu, .mobile-bottom-nav, .fab-btn, .whatsapp-float, .scroll-top, [class*="float"], [class*="fab"]').forEach(function(el){
     if (!el.closest('#superAdminWrapper')) el.style.setProperty('display', 'none', 'important');
   });
-  // ── ব্যাকগ্রাউন্ডে এডমিন প্যানেল থেকে অন্য একাউন্টে লগইন হয়ে থাকলে এই
-  //    ট্যাবের Firebase Auth সেশন আর Super Admin-এর নয়। তাই ফিরে আসার
-  //    সময় currentAdmin/role যাচাই করে দেখা হচ্ছে — Super Admin সেশন
-  //    আর বৈধ না থাকলে আবার লগইন স্ক্রিনে পাঠানো হচ্ছে, যাতে ভাঙা/পুরোনো
-  //    auth দিয়ে চুপচাপ listener চালু না হয়ে যায়। ──
-  const _saStillValid = typeof currentAdmin !== 'undefined' && currentAdmin && currentAdmin.role === 'super-admin';
+  // ── SA নিজস্ব session token দিয়ে বৈধতা যাচাই করো ──
+  // (currentAdmin হলো Admin modal-এর ভেরিয়েবল — SA session এর সাথে সম্পর্ক নেই)
+  const _saStillValid = typeof _isSessionValid === 'function' && _isSessionValid();
   if (!_saStillValid) {
     const adminPanel = document.getElementById('adminPanel');
     const loginPage  = document.getElementById('loginPage');
     if (adminPanel) adminPanel.style.cssText = 'display:none!important;';
     if (loginPage)  { loginPage.style.animation = ''; loginPage.style.cssText = 'display:-webkit-box!important;display:-ms-flexbox!important;display:flex!important;-webkit-box-align:center;-ms-flex-align:center;align-items:center;-webkit-box-pack:center;-ms-flex-pack:center;justify-content:center;position:fixed!important;inset:0!important;z-index:999999!important;'; }
-    if (typeof showToast === 'function') showToast('আবার লগইন করুন', 'এই ট্যাবে অন্য একাউন্টে লগইন হয়েছিল, Super Admin সেশন আর বৈধ নেই।', 'error');
+    if (typeof showToast === 'function') showToast('আবার লগইন করুন', 'সেশন মেয়াদ শেষ। আবার লগইন করুন।', 'error');
     return;
   }
   // সেশন এখনো বৈধ — listener চালু না থাকলে ফ্রেশভাবে চালু করো
