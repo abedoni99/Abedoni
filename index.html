@@ -119,11 +119,15 @@
 
   // ── "viewerSide" (client/admin) যা মেসেজগুলো এখন দেখছে — অপর পক্ষের
   // unread মেসেজগুলোতে readAt বসিয়ে দাও (হোয়াটসঅ্যাপ-স্টাইল ব্লু-টিক) ──
+  // ── in-memory Set: একবার readAt দেওয়া মেসেজ আবার দেওয়া হবে না ──
+  // এতে onSnapshot → readAt write → onSnapshot → write এই infinite loop বন্ধ হবে
+  const _markedReadIds = new Set();
   window.fbMarkMessagesRead = async function(trackingId, viewerSide, msgs) {
     try {
       const otherSide = viewerSide === 'client' ? 'admin' : 'client';
-      const targets = (msgs || []).filter(m => m.from === otherSide && !m.readAt && m.id);
+      const targets = (msgs || []).filter(m => m.from === otherSide && !m.readAt && m.id && !_markedReadIds.has(trackingId + '_' + m.id));
       if (!targets.length) return;
+      targets.forEach(m => _markedReadIds.add(trackingId + '_' + m.id));
       await Promise.all(targets.map(m =>
         updateDoc(doc(db, "applications", trackingId, "messages", m.id), { readAt: serverTimestamp() }).catch(() => {})
       ));
@@ -233,12 +237,15 @@
 
   // ── sa_chat: "viewerSide" (admin/super) যা এখন চ্যাট দেখছে — অপর পক্ষের
   // unread মেসেজগুলোতে readAt বসিয়ে দাও (হোয়াটসঅ্যাপ-স্টাইল ব্লু-টিক) ──
+  // ── SA chat in-memory Set: একবার readAt দেওয়া মেসেজ আবার দেওয়া হবে না ──
+  const _saMarkedReadIds = new Set();
   window.fbMarkSAMessagesRead = async function(channelId, viewerSide, msgs) {
     try {
       const ch = channelId ? String(channelId) : 'channel';
       const otherSide = viewerSide === 'super' ? 'admin' : 'super';
-      const targets = (msgs || []).filter(m => m.from === otherSide && !m.readAt && m.id);
+      const targets = (msgs || []).filter(m => m.from === otherSide && !m.readAt && m.id && !_saMarkedReadIds.has(ch + '_' + m.id));
       if (!targets.length) return;
+      targets.forEach(m => _saMarkedReadIds.add(ch + '_' + m.id));
       await Promise.all(targets.map(m =>
         updateDoc(doc(db, "sa_chat", ch, "messages", m.id), { readAt: serverTimestamp() }).catch(() => {})
       ));
@@ -21229,6 +21236,8 @@ function _saStartListener() {
   // চ্যানেল পরিবর্তন হলে (যেমন login-এর পর currentAdmin সেট হলো) পুরনো listener বন্ধ করো
   if (_saUnsubscribe) { try { _saUnsubscribe(); } catch(e){} _saUnsubscribe = null; }
   _saChannelActive = ch;
+  let _prevSaMsgCount = 0;
+  let _prevSaMsgIds = new Set();
   _saUnsubscribe = window.fbListenSAMessages(function(msgs) {
     const hidden = _saGetHidden(ch, 'admin');
     _saMsgsCache = hidden.length ? msgs.filter(function(m) { return !hidden.includes(m.id); }) : msgs;
@@ -21236,11 +21245,31 @@ function _saStartListener() {
 
     const saWin = document.getElementById('saChatSection');
     if (saWin && saWin.classList.contains('sa-open')) {
-      saRenderMessages();
+      // শুধু readAt পরিবর্তন হলে (সংখ্যা/id একই) tick in-place আপডেট, full rebuild নয়
+      const curIds = new Set(_saMsgsCache.map(function(m){ return m.id; }));
+      const onlyReadAtChanged = (_saMsgsCache.length === _prevSaMsgCount)
+        && _saMsgsCache.every(function(m){ return _prevSaMsgIds.has(m.id); });
+      if (onlyReadAtChanged) {
+        const _saBox = document.getElementById('adminSAChatMessages');
+        if (_saBox) {
+          _saMsgsCache.forEach(function(m) {
+            const _el = _saBox.querySelector('[data-msgid="' + m.id + '"]');
+            if (!_el) return;
+            const _ti = _el.querySelector('.fas.fa-check, .fas.fa-check-double');
+            if (!_ti) return;
+            const _hd = _ti.classList.contains('fa-check-double');
+            if (m.readAt && !_hd) { _ti.classList.remove('fa-check'); _ti.classList.add('fa-check-double'); _ti.style.color='#53BDEB'; }
+            else if (!m.readAt && _hd) { _ti.classList.remove('fa-check-double'); _ti.classList.add('fa-check'); _ti.style.color=''; }
+          });
+        }
+      } else {
+        saRenderMessages();
+      }
+      _prevSaMsgCount = _saMsgsCache.length;
+      _prevSaMsgIds = curIds;
       if (typeof window.fbMarkSAMessagesRead === 'function'
           && typeof currentAdmin !== 'undefined' && currentAdmin && currentAdmin.id) {
-        var _hasUnread = _saMsgsCache.some(function(m){ return m.from === 'super' && !m.readAt; });
-        if (_hasUnread) window.fbMarkSAMessagesRead(ch, 'admin', _saMsgsCache);
+        window.fbMarkSAMessagesRead(ch, 'admin', _saMsgsCache);
       }
     } else {
       const newMsgs = _saMsgsCache.filter(m => m.from === 'super' && (m.ts || 0) > saLastSeen);
@@ -34818,6 +34847,7 @@ function _admChatStartListener(id) {
     setTimeout(() => _admChatStartListener(id), 800);
     return;
   }
+  let _admPrevCount = {}; let _admPrevIds = {};
   _admChatUnsubs[key] = window.fbListenSAMessages(function(msgs) {
     if (!p3state.chatMessages) p3state.chatMessages = {};
     const hidden = (typeof _saGetHidden === 'function') ? _saGetHidden(key, 'super') : [];
@@ -34830,19 +34860,41 @@ function _admChatStartListener(id) {
 
     // চ্যাট আপডেট করো যদি এই এডমিনের modal খোলা থাকে
     if (state.currentChatAdmin == id) {
-      // নতুন sa-wa-layout inbox রেন্ডার করো
-      if (typeof renderChatMessages === 'function') renderChatMessages(id);
-      const saBox = document.getElementById('saChatMessages');
-      if (saBox && saBox.style.display !== 'none') saBox.scrollTop = saBox.scrollHeight;
-      // পুরনো acm modal (যদি খোলা থাকে)
-      acmRenderMessages(id);
-      const box = document.getElementById('acmMsgBox');
-      if (box) box.scrollTop = box.scrollHeight;
+      // শুধু readAt পরিবর্তন হলে tick in-place আপডেট, full rebuild নয়
+      const _pcnt = _admPrevCount[key] || 0;
+      const _pids = _admPrevIds[key] || new Set();
+      const _cids = new Set(fbMsgs.map(function(m){ return m.id; }));
+      const _onlyTick = (fbMsgs.length === _pcnt) && fbMsgs.every(function(m){ return _pids.has(m.id); });
+      if (_onlyTick) {
+        var _saBox2 = document.getElementById('saChatMessages');
+        if (_saBox2) {
+          fbMsgs.forEach(function(m) {
+            var _el2 = _saBox2.querySelector('[data-msgid="' + m.id + '"]');
+            if (!_el2) return;
+            var _ti2 = _el2.querySelector('.chat-tick');
+            if (!_ti2) return;
+            var _ic2 = _ti2.querySelector('.fas');
+            if (!_ic2) return;
+            if (m.readAt && !_ti2.classList.contains('read')) { _ti2.classList.add('read'); _ic2.classList.remove('fa-check'); _ic2.classList.add('fa-check-double'); }
+            else if (!m.readAt && _ti2.classList.contains('read')) { _ti2.classList.remove('read'); _ic2.classList.remove('fa-check-double'); _ic2.classList.add('fa-check'); }
+          });
+        }
+      } else {
+        // নতুন sa-wa-layout inbox রেন্ডার করো
+        if (typeof renderChatMessages === 'function') renderChatMessages(id);
+        const saBox = document.getElementById('saChatMessages');
+        if (saBox && saBox.style.display !== 'none') saBox.scrollTop = saBox.scrollHeight;
+        // পুরনো acm modal (যদি খোলা থাকে)
+        acmRenderMessages(id);
+        const box = document.getElementById('acmMsgBox');
+        if (box) box.scrollTop = box.scrollHeight;
+      }
+      _admPrevCount[key] = fbMsgs.length;
+      _admPrevIds[key] = _cids;
       // সুপার-অ্যাডমিন এই চ্যাট দেখছে — এডমিনের পাঠানো unread মেসেজ "পড়া" মার্ক করো
       if (typeof window.fbMarkSAMessagesRead === 'function'
           && typeof _isSessionValid === 'function' && _isSessionValid()) {
-        var _hasUnreadSA = fbMsgs.some(function(m){ return m.from === 'admin' && !m.readAt; });
-        if (_hasUnreadSA) window.fbMarkSAMessagesRead(key, 'super', fbMsgs);
+        window.fbMarkSAMessagesRead(key, 'super', fbMsgs);
       }
     }
 
