@@ -35150,8 +35150,12 @@ function saGoBackToList() {
   if (saLayout) saLayout.classList.remove('chat-active');
   // history state রিসেট
   window._saChatHistoryPushed = false;
-  // মোবাইলে topbar ও bottom nav ফিরিয়ে আনো
-  saShowChrome();
+  // মোবাইলে চ্যাটলিস্টে ফিরলে chrome লুকানোই থাকবে
+  if (window.innerWidth <= 768) {
+    if (typeof saHideChrome === 'function') saHideChrome();
+  } else {
+    saShowChrome();
+  }
   // inline fullscreen স্টাইল রিসেট করো
   const chatMainEl = document.getElementById('chatMainArea');
   if (chatMainEl) {
@@ -35258,7 +35262,30 @@ window.addEventListener('popstate', function(e) {
   const wrapper = document.getElementById('superAdminWrapper');
   if (!wrapper || wrapper.style.display === 'none') return;
 
-  // dashboard ছাড়া অন্য section-এ থাকলে back → dashboard
+  // মোবাইলে liveChat section এ থাকলে — inbox/list layer আগে handle করো
+  if (window.innerWidth <= 768 && window._saCurrentKey === 'liveChat') {
+    // ইনবক্স খোলা → চ্যাটলিস্টে ফেরো (chrome লুকানোই থাকবে)
+    const saLayout = document.querySelector('#superAdminWrapper .sa-wa-layout');
+    if (saLayout && saLayout.classList.contains('chat-active')) {
+      if (typeof saGoBackToList === 'function') saGoBackToList();
+      // chrome লুকানোই থাকবে কারণ চ্যাটলিস্টে আছি
+      if (typeof saHideChrome === 'function') saHideChrome();
+      window._saChatHistoryPushed = false;
+      history.pushState({ superAdminOpen: true, saSection: 'liveChat', saChatList: true }, '', '#sa-liveChat');
+      return;
+    }
+    // চ্যাটলিস্টে আছি → dashboard এ যাও + chrome ফিরিয়ে দাও
+    window._saGoToFromPopstate = true;
+    const saBackBtn = document.getElementById('saLiveChatBackBtn');
+    if (saBackBtn) saBackBtn.style.display = 'none';
+    if (typeof saShowChrome === 'function') saShowChrome();
+    goTo('dashboard', null);
+    window._saGoToFromPopstate = false;
+    history.pushState({ superAdminOpen: true, saSection: 'dashboard' }, '', '#sa-dashboard');
+    return;
+  }
+
+  // desktop বা অন্য section: dashboard ছাড়া সব section থেকে back → dashboard
   if (window._saCurrentKey && window._saCurrentKey !== 'dashboard') {
     window._saGoToFromPopstate = true;
     const saBackBtn = document.getElementById('saLiveChatBackBtn');
@@ -35266,7 +35293,6 @@ window.addEventListener('popstate', function(e) {
     if (window.innerWidth <= 768 && typeof saShowChrome === 'function') saShowChrome();
     goTo('dashboard', null);
     window._saGoToFromPopstate = false;
-    // পরের back-এ SA panel থেকে বের হওয়া আটকাতে dashboard state push করো
     history.pushState({ superAdminOpen: true, saSection: 'dashboard' }, '', '#sa-dashboard');
     return;
   }
@@ -37220,6 +37246,11 @@ function initChat() {
   if (bcPanel) bcPanel.style.display = 'none';
   p3state.activeChatId = null;
 
+  // দ্বিতীয়বার চ্যাটলিস্টে গেলে cache থেকে সাথে সাথে render করো
+  if (window._chatAdminsListenerStarted && p3state.chatContacts && p3state.chatContacts.length) {
+    try { renderChatContacts(); } catch(e) {}
+  }
+
   // এডমিন না থাকলে Firebase থেকে লোড হওয়া পর্যন্ত অপেক্ষা করো
   // rules অনুযায়ী admins কালেকশন শুধু লগইন করা admin পড়তে পারে, তাই Auth
   // রেডি হওয়ার পরই শুরু করা হয় — নাহলে রিলোডের পরপরই চ্যাট খুললে
@@ -37657,7 +37688,12 @@ function saChatBackToList() {
                  document.querySelector('#superAdminWrapper .chat-layout');
   if (layout) layout.classList.remove('chat-active');
   window._saChatHistoryPushed = false;
-  saShowChrome();
+  // মোবাইলে চ্যাটলিস্টে ফিরলে chrome লুকানোই থাকবে
+  if (window.innerWidth <= 768) {
+    if (typeof saHideChrome === 'function') saHideChrome();
+  } else {
+    saShowChrome();
+  }
   // inline fullscreen স্টাইল রিসেট করো
   const chatMainEl2 = document.getElementById('chatMainArea');
   if (chatMainEl2) {
