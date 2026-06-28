@@ -6304,6 +6304,42 @@
 /* চ্যাট প্যানেলে বাবল লুকাও */
 #adminModalOverlay.chat-panel-active #adminChatMiniBubble { display: none !important; }
 
+/* ── SA প্যানেলের লাইভচ্যাট মিনি বাবল ── */
+#saLiveChatMiniBubble {
+  display: none;
+  position: fixed;
+  bottom: 88px; right: 22px;
+  z-index: 99999;
+  width: 52px; height: 52px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #0A2463 0%, #1a3a7c 100%);
+  box-shadow: 0 4px 20px rgba(10,36,99,0.38), inset 0 1px 0 rgba(255,255,255,0.18);
+  cursor: pointer;
+  align-items: center; justify-content: center;
+  flex-direction: column; gap: 2px;
+  transition: transform 0.18s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.18s;
+  animation: cmb-pop 0.32s cubic-bezier(0.34,1.56,0.64,1);
+  border: 2px solid rgba(255,255,255,0.22);
+}
+#saLiveChatMiniBubble:hover {
+  transform: scale(1.11);
+  box-shadow: 0 8px 28px rgba(10,36,99,0.48);
+}
+#saLiveChatMiniBubble .sa-cmb-icon { font-size: 19px; color: #fff; line-height: 1; }
+#saLiveChatMiniBubble .sa-cmb-label { font-size: 8px; font-weight: 700; color: rgba(255,255,255,0.85); font-family: 'Hind Siliguri', sans-serif; line-height: 1; }
+#saLiveChatMiniBubble .sa-cmb-unread {
+  display: none; position: absolute; top: 1px; right: 1px;
+  background: #E53E3E; color: #fff;
+  font-size: 10px; font-weight: 800;
+  min-width: 16px; height: 16px; border-radius: 50px;
+  align-items: center; justify-content: center;
+  border: 2px solid #fff; padding: 0 3px;
+}
+@media (max-width: 900px) {
+  #saLiveChatMiniBubble { bottom: 72px; right: 14px; }
+}
+#superAdminWrapper #sec-liveChat.active ~ * #saLiveChatMiniBubble { display: none !important; }
+
 /* minimize বাটন — chat window header-এ */
 #adminModalOverlay .cw-minimize-btn {
   width: 32px; height: 32px; border-radius: 50%;
@@ -27779,12 +27815,12 @@ function adminConfirmedLogout() {
       </div>
       <div style="display:flex;gap:6px;">
         <button onclick="chatSwitchTab('broadcast')" title="ব্রডকাস্ট" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.14);border:none;cursor:pointer;color:#fff;font-size:14px;display:flex;align-items:center;justify-content:center;"><i class="fas fa-bullhorn"></i></button>
-        <!-- ডেস্কটপে মিনিমাইজ বাটন -->
-        <button class="desktop-only" onclick="saMinimizePanel()" title="মিনিমাইজ — লগইন থাকবে" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.14);border:none;cursor:pointer;color:#fff;font-size:15px;display:flex;align-items:center;justify-content:center;transition:background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.28)'" onmouseout="this.style.background='rgba(255,255,255,0.14)'"><i class="fas fa-minus"></i></button>
+        <!-- ডেস্কটপে মিনিমাইজ বাটন (চ্যাটলিস্ট → ড্যাশবোর্ড, রিটার্ন বাটন topbar-এ দেখাবে) -->
+        <button class="desktop-only" onclick="saExitLiveChat()" title="ড্যাশবোর্ডে ফিরুন" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.14);border:none;cursor:pointer;color:#fff;font-size:15px;display:flex;align-items:center;justify-content:center;transition:background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.28)'" onmouseout="this.style.background='rgba(255,255,255,0.14)'"><i class="fas fa-minus"></i></button>
         <!-- ডেস্কটপে ব্যাক বাটন -->
-        <button class="desktop-only" onclick="saMinimizePanel()" title="মিনিমাইজ — লগইন থাকবে" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.14);border:none;cursor:pointer;color:#fff;font-size:15px;display:flex;align-items:center;justify-content:center;transition:background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.28)'" onmouseout="this.style.background='rgba(255,255,255,0.14)'"><i class="fas fa-arrow-left"></i></button>
-        <!-- মোবাইলে চ্যাটলিস্ট হেডারে মিনিমাইজ বাটন -->
-        <button class="mobile-only-flex" onclick="saMinimizePanel()" title="মিনিমাইজ — লগইন থাকবে" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.14);border:none;cursor:pointer;color:#fff;font-size:15px;align-items:center;justify-content:center;transition:background 0.15s;display:none;" onmouseover="this.style.background='rgba(255,255,255,0.28)'" onmouseout="this.style.background='rgba(255,255,255,0.14)'"><i class="fas fa-minus"></i></button>
+        <button class="desktop-only" onclick="saExitLiveChat()" title="ড্যাশবোর্ডে ফিরুন" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.14);border:none;cursor:pointer;color:#fff;font-size:15px;display:flex;align-items:center;justify-content:center;transition:background 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.28)'" onmouseout="this.style.background='rgba(255,255,255,0.14)'"><i class="fas fa-arrow-left"></i></button>
+        <!-- মোবাইলে চ্যাটলিস্ট হেডারে ড্যাশবোর্ড বাটন -->
+        <button class="mobile-only-flex" onclick="saExitLiveChat()" title="ড্যাশবোর্ডে ফিরুন" style="width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.14);border:none;cursor:pointer;color:#fff;font-size:15px;align-items:center;justify-content:center;transition:background 0.15s;display:none;" onmouseover="this.style.background='rgba(255,255,255,0.28)'" onmouseout="this.style.background='rgba(255,255,255,0.14)'"><i class="fas fa-arrow-left"></i></button>
       </div>
     </div>
     <!-- Search -->
@@ -27816,8 +27852,8 @@ function adminConfirmedLogout() {
         <div class="sa-wa-main-status" id="chatHeaderStatus">অনলাইন</div>
       </div>
       <div style="display:flex;gap:6px;">
-        <!-- মোবাইলে মিনিমাইজ বাটন (ইনবক্স হেডারে) -->
-        <button class="sa-wa-hd-btn mobile-only-flex" onclick="saGoBackToList()" title="চ্যাট লিস্টে ফিরুন" style="display:none;"><i class="fas fa-minus"></i></button>
+        <!-- মোবাইলে ইনবক্স থেকে চ্যাটলিস্টে ফিরুন (back arrow) -->
+        <button class="sa-wa-hd-btn mobile-only-flex" onclick="saGoBackToList()" title="চ্যাট লিস্টে ফিরুন" style="display:none;"><i class="fas fa-arrow-left"></i></button>
       </div>
     </div>
 
@@ -30319,6 +30355,13 @@ function adminConfirmedLogout() {
   </div>
 </div>
 
+<!-- ===== SA LIVE CHAT MINI BUBBLE ===== -->
+<div id="saLiveChatMiniBubble" onclick="saRestoreToLiveChat()" title="লাইভ চ্যাটে ফিরুন">
+  <div class="sa-cmb-unread" id="saCmbUnread"></div>
+  <div class="sa-cmb-icon"><i class="fas fa-comments"></i></div>
+  <div class="sa-cmb-label">চ্যাট</div>
+</div>
+
 <!-- ===== QUICK NOTE FAB ===== -->
 <div class="quick-note-fab" id="quickNoteFab">
   <div class="quick-note-panel" id="quickNotePanel">
@@ -31577,6 +31620,9 @@ function goTo(key, el) {
   if (saBackBtn) {
     saBackBtn.style.display = (key !== 'dashboard') ? 'flex' : 'none';
   }
+  // liveChat-এ গেলে mini bubble লুকাও
+  const _saBbl = document.getElementById('saLiveChatMiniBubble');
+  if (_saBbl && key === 'liveChat') _saBbl.style.display = 'none';
   // Init part 2 sections
   const p2inits = {
     notifications: initNotifications,
@@ -35169,6 +35215,32 @@ function saExitLiveChat() {
   const saBackBtn = document.getElementById('saLiveChatBackBtn');
   if (saBackBtn) saBackBtn.style.display = 'none';
   goTo('dashboard', document.querySelector('#superAdminWrapper .sb-item[onclick*="dashboard"]') || null);
+  // নিচে ডানে chat bubble দেখাও
+  const bbl = document.getElementById('saLiveChatMiniBubble');
+  if (bbl) bbl.style.display = 'flex';
+  _saUpdateChatBubbleUnread();
+}
+
+function saRestoreToLiveChat() {
+  const bbl = document.getElementById('saLiveChatMiniBubble');
+  if (bbl) bbl.style.display = 'none';
+  goTo('liveChat', document.querySelector('#superAdminWrapper .sb-item[onclick*="liveChat"]') || null);
+}
+
+function _saUpdateChatBubbleUnread() {
+  const badge = document.getElementById('saCmbUnread');
+  if (!badge) return;
+  var total = 0;
+  if (typeof _saMsgsCache !== 'undefined') {
+    total = _saMsgsCache.filter(function(m){ return m.from === 'admin' && !m.readAt; }).length;
+  }
+  if (typeof p3state !== 'undefined' && p3state.chatMessages) {
+    Object.values(p3state.chatMessages).forEach(function(msgs) {
+      total += (msgs || []).filter(function(m){ return m.from === 'admin' && !m.readAt; }).length;
+    });
+  }
+  if (total > 0) { badge.textContent = total > 99 ? '99+' : String(total); badge.style.display = 'flex'; }
+  else { badge.style.display = 'none'; }
 }
 
 /* ── SA panel popstate: back বাটনে section ফিরে যাও ── */
