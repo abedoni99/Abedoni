@@ -21239,7 +21239,11 @@ function _saStartListener() {
       saRenderMessages();
       if (typeof window.fbMarkSAMessagesRead === 'function'
           && typeof currentAdmin !== 'undefined' && currentAdmin && currentAdmin.id) {
-        window.fbMarkSAMessagesRead(ch, 'admin', _saMsgsCache);
+        // শুধু তখনই markRead call করো যখন সত্যিই unread মেসেজ আছে —
+        // এটি না করলে প্রতিটা listener fire-এ updateDoc হয়, সেটি আবার
+        // listener trigger করে, ফলে বারবার render → blink হয়।
+        var _adminUnread = _saMsgsCache.filter(function(m){ return m.from === 'super' && !m.readAt; });
+        if (_adminUnread.length) window.fbMarkSAMessagesRead(ch, 'admin', _saMsgsCache);
       }
     } else {
       const newMsgs = _saMsgsCache.filter(m => m.from === 'super' && (m.ts || 0) > saLastSeen);
@@ -21438,6 +21442,42 @@ function saDeleteSelected() {
   }
 }
 
+// ── saRenderMessages: এক বার তৈরি করা DOM element-এর জন্য সহায়ক ──
+function _saBuildMsgEl(m) {
+  const isMine = m.from === 'admin';
+  const _saChId = typeof _saChannelId === 'function' ? _saChannelId() : 'channel';
+  let _bubbleContent = '';
+  if (m.file) {
+    const f = m.file;
+    const _szKB = f.size ? (typeof f.size === 'string' ? f.size : ((f.size||0)/1024).toFixed(1) + ' KB') : '';
+    if (f.fileDocId) {
+      _bubbleContent = `<div class="cp-msg-file" id="safd_${f.fileDocId}" onclick="saFileDownload('${_saChId}','${f.fileDocId}','${(f.name||'').replace(/['\"]/g,'')}')" style="cursor:pointer;">${getFileIconHtml(f)}<div class="cp-msg-file-info"><div class="cp-msg-file-name">${escHtml(f.name)}</div><div class="cp-msg-file-size">${_szKB}</div></div></div>`;
+    } else {
+      _bubbleContent = `<div class="cp-msg-file">${getFileIconHtml(f)}<div class="cp-msg-file-info"><div class="cp-msg-file-name">${escHtml(f.name||'ফাইল')}</div><div class="cp-msg-file-size">${_szKB}</div></div></div>`;
+    }
+  } else {
+    _bubbleContent = escHtml(m.text||'');
+  }
+  const lp = `onmousedown="saLongPressStart('${m.id}')" onmouseup="saLongPressEnd()" onmouseleave="saLongPressEnd()" ontouchstart="saLongPressStart('${m.id}')" ontouchend="saLongPressEnd()"`;
+  let outerHtml = '';
+  if (isMine) {
+    const _tickIcon = m.readAt ? 'fa-check-double' : 'fa-check';
+    const _tickStyle = m.readAt ? 'font-size:9px;color:#53BDEB;margin-left:2px;' : 'font-size:9px;margin-left:2px;';
+    const _mineBody = m.file
+      ? `${_bubbleContent}<span class="msg-time" style="display:block;text-align:right;margin-top:2px;">${m.time} <i class="fas ${_tickIcon}" style="${_tickStyle}"></i></span>`
+      : `<div class="msg-bubble">${_bubbleContent}<span class="msg-time">${m.time} <i class="fas ${_tickIcon}" style="${_tickStyle}"></i></span></div>`;
+    outerHtml = `<div class="msg-wrap mine" data-msgid="${m.id}" ${lp}><div class="msg-group">${_mineBody}</div></div>`;
+  } else {
+    const _theirBody = m.file
+      ? `${_bubbleContent}<span class="msg-time" style="display:block;margin-top:2px;">${m.time}</span>`
+      : `<div class="msg-bubble">${_bubbleContent}<span class="msg-time">${m.time}</span></div>`;
+    outerHtml = `<div class="msg-wrap theirs" data-msgid="${m.id}" ${lp}><div class="msg-avatar" style="background:linear-gradient(135deg,#0A2463,#1B3A8C);color:#C9A227;font-weight:800;font-size:12px;">স</div><div class="msg-group">${_theirBody}</div></div>`;
+  }
+  const tmp = document.createElement('div');
+  tmp.innerHTML = outerHtml;
+  return tmp.firstElementChild;
+}
+
 function saRenderMessages() {
   const box = document.getElementById('adminSAChatMessages');
   if (!box) return;
@@ -21453,69 +21493,47 @@ function saRenderMessages() {
     return;
   }
 
-  let html = '';
-  msgs.forEach(m => {
-    const isMine = m.from === 'admin';
-    const isSelected = _saSelected.has(m.id);
-    const selStyle = _saSelectMode ? 'cursor:pointer;' : '';
-    const selBg = isSelected ? 'background:rgba(11,150,136,0.16);border-radius:10px;' : '';
-    const dot = (_saSelectMode && isSelected) ? `<div style="width:20px;height:20px;border-radius:50%;background:#0B9688;color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;"><i class="fas fa-check"></i></div>` : '';
-    // ফাইল বা টেক্সট — bubble content তৈরি করো
-    let _bubbleContent = '';
-    if (m.file) {
-      const f = m.file;
-      const _szKB = f.size ? (typeof f.size === 'string' ? f.size : ((f.size||0)/1024).toFixed(1) + ' KB') : '';
-      const _icon = getFileIcon(f);
-      const _saChId = typeof _saChannelId === 'function' ? _saChannelId() : 'channel';
-       if (f.fileDocId) {
-         // Firestore chunks — ক্লিকযোগ্য ফাইল
-         _bubbleContent = `<div class="cp-msg-file" id="safd_${f.fileDocId}" onclick="saFileDownload('${_saChId}','${f.fileDocId}','${(f.name||'').replace(/['\"]/g,'')}')" style="cursor:pointer;">
-           ${getFileIconHtml(f)}
-           <div class="cp-msg-file-info">
-             <div class="cp-msg-file-name">${escHtml(f.name)}</div>
-             <div class="cp-msg-file-size">${_szKB}</div>
-           </div>
-         </div>`;
-       } else {
-         _bubbleContent = `<div class="cp-msg-file">
-           ${getFileIconHtml(f)}
-           <div class="cp-msg-file-info">
-             <div class="cp-msg-file-name">${escHtml(f.name||'ফাইল')}</div>
-             <div class="cp-msg-file-size">${_szKB}</div>
-           </div>
-         </div>`;
-       }
-    } else {
-      _bubbleContent = escHtml(m.text||'');
-    }
-    const lp = `onmousedown="saLongPressStart('${m.id}')" onmouseup="saLongPressEnd()" onmouseleave="saLongPressEnd()" ontouchstart="saLongPressStart('${m.id}')" ontouchend="saLongPressEnd()"`;
-    if (isMine) {
-      const _tickCls = m.readAt ? 'tick read' : 'tick';
-      const _tickIcon = m.readAt ? 'fa-check-double' : 'fa-check';
-      const _mineBody = m.file
-        ? `${_bubbleContent}<span class="msg-time" style="display:block;text-align:right;margin-top:2px;">${m.time} <i class="fas ${_tickIcon} ${_tickCls}"></i></span>`
-        : `<div class="msg-bubble">${_bubbleContent}<span class="msg-time">${m.time} <i class="fas ${_tickIcon} ${_tickCls}"></i></span></div>`;
-      html += `<div class="msg-wrap mine" data-msgid="${m.id}" style="${selStyle}${selBg}" ${lp}>
-        ${dot}
-        <div class="msg-group">${_mineBody}</div>
-      </div>`;
-    } else {
-      const _theirBody = m.file
-        ? `${_bubbleContent}<span class="msg-time" style="display:block;margin-top:2px;">${m.time}</span>`
-        : `<div class="msg-bubble">${_bubbleContent}<span class="msg-time">${m.time}</span></div>`;
-      html += `<div class="msg-wrap theirs" data-msgid="${m.id}" style="${selStyle}${selBg}" ${lp}>
-        ${dot}
-        <div class="msg-avatar" style="background:linear-gradient(135deg,#0A2463,#1B3A8C);color:#C9A227;font-weight:800;font-size:12px;">স</div>
-        <div class="msg-group">${_theirBody}</div>
-      </div>`;
-    }
-  });
   // select mode-এ innerHTML rebuild করলে blink হয় — skip করো
   if (_saSelectMode) {
     _saApplySelectVisualsAdmin();
     return;
   }
-  box.innerHTML = html;
+
+  // ── Incremental update: blink ও scroll-jump ছাড়াই আপডেট ──
+  // বিদ্যমান DOM id-গুলো সংগ্রহ করো
+  const existingIds = new Set();
+  box.querySelectorAll('[data-msgid]').forEach(function(el) { existingIds.add(el.getAttribute('data-msgid')); });
+  const newIdSet = new Set(msgs.filter(function(m){ return m.id; }).map(function(m){ return m.id; }));
+
+  // DOM-এ আছে কিন্তু নতুন list-এ নেই — সরিয়ে দাও (deleted)
+  box.querySelectorAll('[data-msgid]').forEach(function(el) {
+    if (!newIdSet.has(el.getAttribute('data-msgid'))) el.remove();
+  });
+
+  // নতুন list অনুযায়ী append বা tick-only update করো
+  msgs.forEach(function(m) {
+    if (!m.id) return;
+    const existing = box.querySelector('[data-msgid="' + m.id + '"]');
+    if (existing) {
+      // শুধু read-tick in-place আপডেট — DOM rebuild নেই, blink নেই
+      if (m.from === 'admin') {
+        const tickEl = existing.querySelector('.msg-time i');
+        if (tickEl) {
+          if (m.readAt) {
+            tickEl.className = 'fas fa-check-double';
+            tickEl.style.cssText = 'font-size:9px;color:#53BDEB;margin-left:2px;';
+          } else {
+            tickEl.className = 'fas fa-check';
+            tickEl.style.cssText = 'font-size:9px;margin-left:2px;';
+          }
+        }
+      }
+      return;
+    }
+    // নতুন মেসেজ — তৈরি করে append করো
+    box.appendChild(_saBuildMsgEl(m));
+  });
+
   box.scrollTop = box.scrollHeight;
 
   if (msgs.length) setSaLastSeen(msgs[msgs.length - 1].ts || 0);
@@ -34739,62 +34757,67 @@ function acmRenderMessages(id) {
     _acmApplySelectVisuals();
     return;
   }
-    box.innerHTML = msgs.map(m => {
+  // ── Incremental update: blink ছাড়াই আপডেট ──
+  const _acmExistingIds = new Set();
+  box.querySelectorAll('[data-msgid]').forEach(function(el) { _acmExistingIds.add(el.getAttribute('data-msgid')); });
+  const _acmNewIdSet = new Set(msgs.filter(function(m){ return m.id; }).map(function(m){ return m.id; }));
+
+  // DOM-এ আছে কিন্তু নতুন list-এ নেই — সরিয়ে দাও
+  box.querySelectorAll('[data-msgid]').forEach(function(el) {
+    if (!_acmNewIdSet.has(el.getAttribute('data-msgid'))) el.remove();
+  });
+
+  const _admName = (state.admins||[]).find(x=>x.id==id);
+  const _admAvatar = _admName ? (_admName.name||'A').charAt(0).toUpperCase() : 'A';
+
+  msgs.forEach(function(m) {
+    if (!m.id) return;
+    const existing = box.querySelector('[data-msgid="' + m.id + '"]');
+    if (existing) {
+      // শুধু read-tick in-place আপডেট — blink নেই
+      if (m.from === 'super') {
+        const tickEl = existing.querySelector('.chat-bubble-time i, i.fa-check, i.fa-check-double');
+        if (tickEl) {
+          if (m.readAt) { tickEl.className = 'fas fa-check-double chat-tick read'; }
+          else { tickEl.className = 'fas fa-check chat-tick delivered'; }
+        }
+      }
+      return;
+    }
+    // নতুন মেসেজ — তৈরি করে append করো
     const isSent = m.from === 'super';
+    const lp = `onmousedown="acmLongPressStart('${m.id}')" onmouseup="acmLongPressEnd()" onmouseleave="acmLongPressEnd()" ontouchstart="acmLongPressStart('${m.id}')" ontouchend="acmLongPressEnd()"`;
     let content = '';
     if (m.file) {
       const f = m.file;
-       const _fSizeKB = f.size ? (typeof f.size === 'string' ? f.size : (f.size/1024).toFixed(1) + ' KB') : '';
-       const icon = getFileIcon(f);
-       const _admId = String(id);
-       if (f.fileDocId) {
-         content = `<div class="cp-msg-file" id="safd_${f.fileDocId}" onclick="saFileDownload('${_admId}','${f.fileDocId}','${(f.name||'').replace(/['"]/g,'')}')" style="cursor:pointer;">
-           ${getFileIconHtml(f)}
-           <div class="cp-msg-file-info">
-             <div class="cp-msg-file-name">${escHtml(f.name)}</div>
-             <div class="cp-msg-file-size">${_fSizeKB}</div>
-           </div>
-         </div>`;
-       } else {
-         content = `<div class="cp-msg-file">
-           ${getFileIconHtml(f)}
-           <div class="cp-msg-file-info">
-             <div class="cp-msg-file-name">${escHtml(f.name)}</div>
-             <div class="cp-msg-file-size">${_fSizeKB}</div>
-           </div>
-         </div>`;
-       }
+      const _fSizeKB = f.size ? (typeof f.size === 'string' ? f.size : (f.size/1024).toFixed(1) + ' KB') : '';
+      const _admId = String(id);
+      if (f.fileDocId) {
+        content = `<div class="cp-msg-file" id="safd_${f.fileDocId}" onclick="saFileDownload('${_admId}','${f.fileDocId}','${(f.name||'').replace(/['"]/g,'')}')" style="cursor:pointer;">${getFileIconHtml(f)}<div class="cp-msg-file-info"><div class="cp-msg-file-name">${escHtml(f.name)}</div><div class="cp-msg-file-size">${_fSizeKB}</div></div></div>`;
+      } else {
+        content = `<div class="cp-msg-file">${getFileIconHtml(f)}<div class="cp-msg-file-info"><div class="cp-msg-file-name">${escHtml(f.name)}</div><div class="cp-msg-file-size">${_fSizeKB}</div></div></div>`;
+      }
     } else {
       content = (m.text||'');
     }
-    const isSelected = _acmSelected.has(m.id);
-    const chk = (_acmSelectMode && m.id && isSelected) ? `<div class="acm-sel-dot" style="width:20px;height:20px;border-radius:50%;background:#0B9688;color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;"><i class="fas fa-check"></i></div>` : '';
-    const lp = m.id ? `onmousedown="acmLongPressStart('${m.id}')" onmouseup="acmLongPressEnd()" onmouseleave="acmLongPressEnd()" ontouchstart="acmLongPressStart('${m.id}')" ontouchend="acmLongPressEnd()"` : '';
-    const rowClick = (_acmSelectMode && m.id) ? `onclick="acmToggleSelectMsg('${m.id}')"` : '';
-    const rowStyle = _acmSelectMode ? `cursor:pointer;${isSelected?'background:rgba(11,150,136,0.16);border-radius:10px;':''}` : '';
+    let outerHtml = '';
     if (isSent) {
       const _acmTickCls = m.readAt ? 'chat-tick read' : 'chat-tick delivered';
       const _acmTickIcon = m.readAt ? 'fa-check-double' : 'fa-check';
       const _acmSentBody = m.file
         ? `${content}<div class="chat-bubble-time" style="text-align:right;font-size:10px;color:var(--gray);margin-top:2px;">${m.time} <i class="fas ${_acmTickIcon} ${_acmTickCls}"></i></div>`
         : `<div class="chat-bubble sent">${content}<div class="chat-bubble-time">${m.time} <i class="fas ${_acmTickIcon} ${_acmTickCls}"></i></div></div>`;
-      return `<div class="chat-msg-row sent" ${m.id ? `data-msgid="${m.id}"` : ''} style="${rowStyle}" ${lp} ${rowClick}>
-        ${chk}
-        ${_acmSentBody}
-      </div>`;
+      outerHtml = `<div class="chat-msg-row sent" data-msgid="${m.id}" ${lp}>${_acmSentBody}</div>`;
     } else {
-      const _admName = (state.admins||[]).find(x=>x.id==id);
-      const _admAvatar = _admName ? (_admName.name||'A').charAt(0).toUpperCase() : 'A';
       const _acmRecvBody = m.file
         ? `${content}<div class="chat-bubble-time" style="font-size:10px;color:var(--gray);margin-top:2px;">${m.time}</div>`
         : `<div class="chat-bubble received">${content}<div class="chat-bubble-time">${m.time}</div></div>`;
-      return `<div class="chat-msg-row received" ${m.id ? `data-msgid="${m.id}"` : ''} style="${rowStyle}" ${lp} ${rowClick}>
-        ${chk}
-        <div class="chat-msg-avatar">${_admAvatar}</div>
-        ${_acmRecvBody}
-      </div>`;
+      outerHtml = `<div class="chat-msg-row received" data-msgid="${m.id}" ${lp}><div class="chat-msg-avatar">${_admAvatar}</div>${_acmRecvBody}</div>`;
     }
-  }).join('');
+    const tmp = document.createElement('div');
+    tmp.innerHTML = outerHtml;
+    box.appendChild(tmp.firstElementChild);
+  });
   if (!_acmSelectMode) box.scrollTop = box.scrollHeight;
 }
 
@@ -34838,9 +34861,13 @@ function _admChatStartListener(id) {
       const box = document.getElementById('acmMsgBox');
       if (box) box.scrollTop = box.scrollHeight;
       // সুপার-অ্যাডমিন এই চ্যাট দেখছে — এডমিনের পাঠানো unread মেসেজ "পড়া" মার্ক করো
+      // শুধু তখনই markRead call করো যখন সত্যিই unread মেসেজ আছে —
+      // এটি না করলে প্রতিটা listener fire-এ updateDoc হয়, সেটি আবার
+      // listener trigger করে, ফলে বারবার render → blink হয়।
       if (typeof window.fbMarkSAMessagesRead === 'function'
           && typeof _isSessionValid === 'function' && _isSessionValid()) {
-        window.fbMarkSAMessagesRead(key, 'super', fbMsgs);
+        var _superUnread = fbMsgs.filter(function(m){ return m.from === 'admin' && !m.readAt; });
+        if (_superUnread.length) window.fbMarkSAMessagesRead(key, 'super', fbMsgs);
       }
     }
 
@@ -35248,95 +35275,97 @@ function saToggleSelectMsg2(id) {
   _saUpdateSelectHead2();
 }
 
+// ── renderChatMessages: একটি মেসেজের DOM element তৈরি (Super Admin side) ──
+function _rcmBuildMsgEl(m, adminId) {
+  const isMine = m.from === 'super';
+  const mid = m.id || '';
+  const safe = String(m.text||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const lp = mid
+    ? `onmousedown="saLpStart2('${mid}')" onmouseup="saLpEnd2()" onmouseleave="saLpEnd2()" ontouchstart="saLpStart2('${mid}')" ontouchend="saLpEnd2()" ontouchmove="saLpMove2()" onclick="saToggleSelectMsg2('${mid}')"`
+    : '';
+  let fileHtml = '';
+  if (m.file) {
+    const _saSz = m.file.size ? (typeof m.file.size === 'string' ? m.file.size : (m.file.size/1024).toFixed(1) + ' KB') : '';
+    const _saUploading = m.file._uploading;
+    const _saFailed = m.file._failed;
+    const _saPct = m.file._uploadPct != null ? m.file._uploadPct : 0;
+    if (_saFailed) {
+      fileHtml = `<div class="cp-msg-file" style="flex-wrap:wrap;gap:8px;opacity:0.7;margin-bottom:4px;"><i class="fas fa-circle-exclamation" style="font-size:20px;color:#e53e3e;flex-shrink:0;"></i><div style="flex:1;min-width:0;"><div class="cp-msg-file-name">${escHtml(m.file.name)}</div><div class="cp-msg-file-size" style="color:#e53e3e;">পাঠানো ব্যর্থ হয়েছে।</div></div></div>`;
+    } else if (_saUploading) {
+      fileHtml = `<div class="cp-msg-file" style="flex-wrap:wrap;gap:8px;margin-bottom:4px;">${getFileIconHtml(m.file)}<div style="flex:1;min-width:0;"><div class="cp-msg-file-name">${escHtml(m.file.name)}</div><div style="margin-top:5px;background:rgba(0,0,0,0.1);border-radius:4px;height:5px;overflow:hidden;"><div class="cp-upload-bar" style="height:100%;background:#0B9688;border-radius:4px;width:${_saPct}%;transition:width 0.3s;"></div></div><div class="cp-upload-pct" style="font-size:11px;color:var(--gray);margin-top:3px;">আপলোড হচ্ছে... ${_saPct}%</div></div></div>`;
+    } else if (m.file.isImg && m.file.dataUrl) {
+      fileHtml = `<div style="margin-bottom:4px;"><img src="${m.file.dataUrl}" style="max-width:200px;max-height:200px;border-radius:6px;display:block;"></div>`;
+    } else if (m.file.fileDocId) {
+      const _saChId = String(adminId);
+      fileHtml = `<div class="cp-msg-file" id="safd_${m.file.fileDocId}" onclick="saFileDownload('${_saChId}','${m.file.fileDocId}','${(m.file.name||'ফাইল').replace(/['"]/g,'')}')" style="cursor:pointer;margin-bottom:4px;">${getFileIconHtml(m.file)}<div class="cp-msg-file-info"><div class="cp-msg-file-name">${escHtml(m.file.name)||'ফাইল'}</div><div class="cp-msg-file-size">${_saSz}</div></div></div>`;
+    } else if (m.file.name) {
+      fileHtml = `<div class="cp-msg-file" style="margin-bottom:4px;">${getFileIconHtml(m.file)}<div class="cp-msg-file-info"><div class="cp-msg-file-name">${escHtml(m.file.name)}</div><div class="cp-msg-file-size">${_saSz}</div></div></div>`;
+    }
+  }
+  let outerHtml = '';
+  if (isMine) {
+    const _rcmTickColor = m.readAt ? '#53BDEB' : '';
+    const _rcmTickIcon = m.readAt ? 'fa-check-double' : 'fa-check';
+    const _tickStyle = _rcmTickColor ? `font-size:9px;color:${_rcmTickColor};margin-left:2px;` : 'font-size:9px;margin-left:2px;';
+    const _sentBody = fileHtml
+      ? `${fileHtml}${safe ? `<div class="chat-bubble sent" style="margin-top:2px;">${safe}<span class="chat-bubble-time">${m.time||''} <i class="fas ${_rcmTickIcon}" style="${_tickStyle}"></i></span></div>` : `<div class="cp-msg-bubble-time" style="font-size:10px;color:rgba(255,255,255,0.7);text-align:right;margin-top:2px;">${m.time||''} <i class="fas ${_rcmTickIcon}" style="${_tickStyle}"></i></div>`}`
+      : `<div class="chat-bubble sent">${safe}<span class="chat-bubble-time">${m.time||''} <i class="fas ${_rcmTickIcon}" style="${_tickStyle}"></i></span></div>`;
+    outerHtml = `<div class="chat-msg-row sent" data-msgid="${mid}" ${lp}><div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;max-width:68%;flex:1;">${_sentBody}</div></div>`;
+  } else {
+    const _recvBody = fileHtml
+      ? `${fileHtml}${safe ? `<div class="chat-bubble received" style="margin-top:2px;">${safe}<span class="chat-bubble-time">${m.time||''}</span></div>` : `<div style="font-size:10px;color:var(--gray);margin-top:2px;">${m.time||''}</div>`}`
+      : `<div class="chat-bubble received">${safe}<span class="chat-bubble-time">${m.time||''}</span></div>`;
+    outerHtml = `<div class="chat-msg-row received" data-msgid="${mid}" ${lp}><div class="chat-msg-avatar" style="background:linear-gradient(135deg,#0A2463,#2855C8);color:#C9A227;">এ</div><div style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;max-width:68%;flex:1;">${_recvBody}</div></div>`;
+  }
+  const tmp = document.createElement('div');
+  tmp.innerHTML = outerHtml;
+  return tmp.firstElementChild;
+}
+
 function renderChatMessages(adminId) {
   const box = document.getElementById('saChatMessages');
   if (!box) return;
   const msgs = (p3state.chatMessages && p3state.chatMessages[adminId]) ||
                (state.chatMessages && state.chatMessages[adminId]) || [];
-  box.innerHTML = msgs.length ? msgs.map(m => {
-    const isMine = m.from === 'super';
-    const safe = String(m.text||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    const mid = m.id || '';
-    const isSelected = mid && _saSelected.has(mid);
-    const selStyle = _saSelectMode ? 'cursor:pointer;' : '';
-    const selBg = isSelected ? 'background:rgba(11,150,136,0.16);border-radius:10px;' : '';
-    const checkDot = (mid && _saSelectMode && isSelected)
-      ? `<div style="width:20px;height:20px;border-radius:50%;background:#0B9688;color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;align-self:center;"><i class="fas fa-check"></i></div>`
-      : '';
-    // onclick সবসময় saToggleSelectMsg2 — function নিজেই mode চেক করবে
-    // longpress: ontouchstart/onmousedown — function নিজেই mode চেক করবে
-    const lp = mid
-      ? `onmousedown="saLpStart2('${mid}')" onmouseup="saLpEnd2()" onmouseleave="saLpEnd2()" ontouchstart="saLpStart2('${mid}')" ontouchend="saLpEnd2()" ontouchmove="saLpMove2()" onclick="saToggleSelectMsg2('${mid}')"`
-      : '';
-     let fileHtml = '';
-     if (m.file) {
-       const _saExt = (m.file.name||'').split('.').pop().toLowerCase();
-       const _saIcon = getFileIcon(m.file);
-       const _saSz = m.file.size ? (typeof m.file.size === 'string' ? m.file.size : (m.file.size/1024).toFixed(1) + ' KB') : '';
-       const _saUploading = m.file._uploading;
-       const _saFailed = m.file._failed;
-       const _saPct = m.file._uploadPct != null ? m.file._uploadPct : 0;
-       if (_saFailed) {
-         fileHtml = `<div class="cp-msg-file" style="flex-wrap:wrap;gap:8px;opacity:0.7;margin-bottom:4px;">
-           <i class="fas fa-circle-exclamation" style="font-size:20px;color:#e53e3e;flex-shrink:0;"></i>
-           <div style="flex:1;min-width:0;">
-             <div class="cp-msg-file-name">${escHtml(m.file.name)}</div>
-             <div class="cp-msg-file-size" style="color:#e53e3e;">পাঠানো ব্যর্থ হয়েছে।</div>
-           </div>
-         </div>`;
-       } else if (_saUploading) {
-         fileHtml = `<div class="cp-msg-file" style="flex-wrap:wrap;gap:8px;margin-bottom:4px;">
-           ${getFileIconHtml(m.file)}
-           <div style="flex:1;min-width:0;">
-             <div class="cp-msg-file-name">${escHtml(m.file.name)}</div>
-             <div style="margin-top:5px;background:rgba(0,0,0,0.1);border-radius:4px;height:5px;overflow:hidden;">
-               <div class="cp-upload-bar" style="height:100%;background:#0B9688;border-radius:4px;width:${_saPct}%;transition:width 0.3s;"></div>
-             </div>
-             <div class="cp-upload-pct" style="font-size:11px;color:var(--gray);margin-top:3px;">আপলোড হচ্ছে... ${_saPct}%</div>
-           </div>
-         </div>`;
-       } else if (m.file.isImg && m.file.dataUrl) {
-         fileHtml = `<div style="margin-bottom:4px;"><img src="${m.file.dataUrl}" style="max-width:200px;max-height:200px;border-radius:6px;display:block;"></div>`;
-       } else if (m.file.fileDocId) {
-         const _saChId = String(adminId);
-         fileHtml = `<div class="cp-msg-file" id="safd_${m.file.fileDocId}" onclick="saFileDownload('${_saChId}','${m.file.fileDocId}','${(m.file.name||'ফাইল').replace(/['"]/g,'')}')" style="cursor:pointer;margin-bottom:4px;">
-           ${getFileIconHtml(m.file)}
-           <div class="cp-msg-file-info">
-             <div class="cp-msg-file-name">${escHtml(m.file.name)||'ফাইল'}</div>
-             <div class="cp-msg-file-size">${_saSz}</div>
-           </div>
-         </div>`;
-       } else if (m.file.name) {
-         fileHtml = `<div class="cp-msg-file" style="margin-bottom:4px;">
-           ${getFileIconHtml(m.file)}
-           <div class="cp-msg-file-info">
-             <div class="cp-msg-file-name">${escHtml(m.file.name)}</div>
-             <div class="cp-msg-file-size">${_saSz}</div>
-           </div>
-         </div>`;
-       }
-     }
-    if (isMine) {
-      const _rcmTickColor = m.readAt ? '#53BDEB' : '';
-      const _rcmTickIcon = m.readAt ? 'fa-check-double' : 'fa-check';
-      const _sentBody = fileHtml ? `${fileHtml}${safe ? `<div class="chat-bubble sent" style="margin-top:2px;">${safe}<span class="chat-bubble-time">${m.time||''} <i class="fas ${_rcmTickIcon}"${_rcmTickColor ? ` style="font-size:9px;color:${_rcmTickColor};margin-left:2px;"` : ' style="font-size:9px;margin-left:2px;"'}></i></span></div>` : `<div class="cp-msg-bubble-time" style="font-size:10px;color:rgba(255,255,255,0.7);text-align:right;margin-top:2px;">${m.time||''} <i class="fas ${_rcmTickIcon}"${_rcmTickColor ? ` style="font-size:9px;color:${_rcmTickColor};"` : ' style="font-size:9px;"'}></i></div>`}` : `<div class="chat-bubble sent">${safe}<span class="chat-bubble-time">${m.time||''} <i class="fas ${_rcmTickIcon}"${_rcmTickColor ? ` style="font-size:9px;color:${_rcmTickColor};margin-left:2px;"` : ' style="font-size:9px;margin-left:2px;"'}></i></span></div>`;
-      return `<div class="chat-msg-row sent" data-msgid="${mid}" style="${selStyle}${selBg}" ${lp}>
-        ${checkDot}
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;max-width:68%;flex:1;">
-          ${_sentBody}
-        </div>
-      </div>`;
-    } else {
-      const _recvBody = fileHtml ? `${fileHtml}${safe ? `<div class="chat-bubble received" style="margin-top:2px;">${safe}<span class="chat-bubble-time">${m.time||''}</span></div>` : `<div style="font-size:10px;color:var(--gray);margin-top:2px;">${m.time||''}</div>`}` : `<div class="chat-bubble received">${safe}<span class="chat-bubble-time">${m.time||''}</span></div>`;
-      return `<div class="chat-msg-row received" data-msgid="${mid}" style="${selStyle}${selBg}" ${lp}>
-        <div class="chat-msg-avatar" style="background:linear-gradient(135deg,#0A2463,#2855C8);color:#C9A227;">এ</div>
-        <div style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;max-width:68%;flex:1;">
-          ${_recvBody}
-        </div>
-        ${checkDot}
-      </div>`;
+
+  if (!msgs.length) {
+    box.innerHTML = '<div style="text-align:center;color:var(--gray);font-size:13px;padding:60px 0 40px;"><i class="fas fa-comment-dots" style="font-size:36px;color:rgba(0,0,0,0.15);display:block;margin-bottom:12px;"></i>এই এডমিনের সাথে কোনো বার্তা নেই</div>';
+    return;
+  }
+
+  // ── Incremental update: blink ও scroll-jump ছাড়াই আপডেট ──
+  const existingIds = new Set();
+  box.querySelectorAll('[data-msgid]').forEach(function(el) { existingIds.add(el.getAttribute('data-msgid')); });
+  const newIdSet = new Set(msgs.filter(function(m){ return m.id; }).map(function(m){ return m.id; }));
+
+  // DOM-এ আছে কিন্তু নতুন list-এ নেই — সরিয়ে দাও
+  box.querySelectorAll('[data-msgid]').forEach(function(el) {
+    if (!newIdSet.has(el.getAttribute('data-msgid'))) el.remove();
+  });
+
+  msgs.forEach(function(m) {
+    if (!m.id) return;
+    const existing = box.querySelector('[data-msgid="' + m.id + '"]');
+    if (existing) {
+      // শুধু read-tick in-place আপডেট — DOM rebuild নেই, blink নেই
+      if (m.from === 'super') {
+        const tickEl = existing.querySelector('.chat-bubble-time i, .cp-msg-bubble-time i');
+        if (tickEl) {
+          if (m.readAt) {
+            tickEl.className = 'fas fa-check-double';
+            tickEl.style.cssText = 'font-size:9px;color:#53BDEB;margin-left:2px;';
+          } else {
+            tickEl.className = 'fas fa-check';
+            tickEl.style.cssText = 'font-size:9px;margin-left:2px;';
+          }
+        }
+      }
+      return;
     }
-  }).join('') : '<div style="text-align:center;color:var(--gray);font-size:13px;padding:60px 0 40px;"><i class="fas fa-comment-dots" style="font-size:36px;color:rgba(0,0,0,0.15);display:block;margin-bottom:12px;"></i>এই এডমিনের সাথে কোনো বার্তা নেই</div>';
+    // নতুন মেসেজ — তৈরি করে append করো
+    box.appendChild(_rcmBuildMsgEl(m, adminId));
+  });
+
   box.scrollTop = box.scrollHeight;
 }
 
