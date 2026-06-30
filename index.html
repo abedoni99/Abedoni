@@ -35133,13 +35133,13 @@ function selectChatAdmin(id) {
     saLayout.classList.add('chat-active');
     const chatMain = saLayout.querySelector('.sa-wa-main, .chat-main');
     if (chatMain) chatMain.classList.remove('no-chat-selected');
-    if (!window._saChatHistoryPushed) {
-      window._saChatHistoryPushed = true;
-      history.pushState({ saChatView: true, chatId: id }, '');
-    }
+    // (history push নেই — popstate এ _saMobileView দিয়ে handle হবে)
   }
   // মোবাইলে topbar ও bottom nav লুকাও
-  if (window.innerWidth <= 768 && typeof saHideChrome === 'function') saHideChrome();
+  if (window.innerWidth <= 768) {
+    window._saMobileView = 'inbox';
+    if (typeof saHideChrome === 'function') saHideChrome();
+  }
 }
 
 function saGoBackToList() {
@@ -35151,9 +35151,21 @@ function saGoBackToList() {
   if (saLayout) saLayout.classList.remove('chat-active');
   // history state রিসেট
   window._saChatHistoryPushed = false;
-  // মোবাইলে চ্যাটলিস্টে ফিরলে chrome লুকানোই থাকবে
+  // মোবাইলে চ্যাটলিস্টে ফিরলে chrome লুকানোই থাকবে (history push ছাড়া)
   if (window.innerWidth <= 768) {
-    if (typeof saHideChrome === 'function') saHideChrome();
+    var _tp2 = document.querySelector('#superAdminWrapper .sa-layout-topbar');
+    var _bn2 = document.getElementById('saMobileBottomNav');
+    var _fb2 = document.getElementById('quickNoteFab');
+    if (_tp2) _tp2.style.display = 'none';
+    if (_bn2) _bn2.style.display = 'none';
+    if (_fb2) _fb2.style.display = 'none';
+    var _wr2 = document.getElementById('superAdminWrapper');
+    if (_wr2) _wr2.classList.add('inbox-open');
+    document.body.classList.add('sa-inbox-open');
+    document.documentElement.style.overflow = 'hidden';
+    document.documentElement.style.overscrollBehavior = 'none';
+    document.body.style.overscrollBehavior = 'none';
+    window._inboxHistoryPushed = false;
   } else {
     saShowChrome();
   }
@@ -35191,6 +35203,20 @@ function saGoBackToList() {
   if (window.innerWidth > 768) {
     const panelName = (typeof _currentPanel !== 'undefined' && _currentPanel) ? _currentPanel : 'liveChat';
     history.replaceState({ panel: panelName }, '', '#' + panelName);
+  }
+  if (window.innerWidth <= 768) {
+    window._saMobileView = 'list';
+    // chrome লুকানো রাখো (চ্যাটলিস্টে আছি)
+    var _tp4 = document.querySelector('#superAdminWrapper .sa-layout-topbar');
+    var _bn4 = document.getElementById('saMobileBottomNav');
+    if (_tp4) _tp4.style.display = 'none';
+    if (_bn4) _bn4.style.display = 'none';
+    var _wr4 = document.getElementById('superAdminWrapper');
+    if (_wr4) _wr4.classList.add('inbox-open');
+    document.body.classList.add('sa-inbox-open');
+    document.documentElement.style.overflow = 'hidden';
+    document.documentElement.style.overscrollBehavior = 'none';
+    document.body.style.overscrollBehavior = 'none';
   }
   window._saBackToListMode = false;
 }
@@ -35734,31 +35760,29 @@ window.addEventListener('popstate', function(e) {
     window._chatBackHandled = true;
     return;
   }
-  // মোবাইলে inbox খোলা থাকলে back → inbox বন্ধ করো
-  if (e.state && e.state.saInboxOpen) {
-    if (typeof saShowChrome === 'function') saShowChrome();
-    window._chatBackHandled = true;
-    return;
-  }
-  const wrapper = document.getElementById('superAdminWrapper');
-  if (wrapper && wrapper.classList.contains('inbox-open')) {
-    if (typeof saShowChrome === 'function') saShowChrome();
-    window._chatBackHandled = true;
-    return;
-  }
-  // নতুন sa-wa-layout chat-active থাকলে list-এ ফিরিয়ে দাও
-  const saLayout = document.querySelector('#superAdminWrapper .sa-wa-layout');
-  if (saLayout && saLayout.classList.contains('chat-active')) {
-    if (typeof saGoBackToList === 'function') saGoBackToList();
-    window._saChatHistoryPushed = false;
-    window._chatBackHandled = true;
-    return;
-  }
-  if (e.state && e.state.saChatView) {
-    if (typeof saGoBackToList === 'function') saGoBackToList();
-    window._saChatHistoryPushed = false;
-    window._chatBackHandled = true;
-    return;
+  // মোবাইল SA chat back navigation — _saMobileView দিয়ে handle
+  const _saWrapper = document.getElementById('superAdminWrapper');
+  if (_saWrapper && _saWrapper.style.display !== 'none' && window.innerWidth <= 768) {
+    if (window._saMobileView === 'inbox') {
+      // ইনবক্স → চ্যাটলিস্ট
+      if (typeof saGoBackToList === 'function') saGoBackToList();
+      window._chatBackHandled = true;
+      return;
+    }
+    if (window._saMobileView === 'list') {
+      // চ্যাটলিস্ট → ড্যাশবোর্ড
+      window._saMobileView = null;
+      if (typeof saShowChrome === 'function') saShowChrome();
+      if (typeof saExitLiveChat === 'function') {
+        // saExitLiveChat এর minimize logic এড়িয়ে শুধু dashboard এ যাই
+        window._saExitFromInbox = false;
+        const _saBtn = document.getElementById('saLiveChatBackBtn');
+        if (_saBtn) _saBtn.style.display = 'none';
+        goTo('dashboard', null);
+      }
+      window._chatBackHandled = true;
+      return;
+    }
   }
 });
 document.addEventListener('DOMContentLoaded', function() {
@@ -37279,7 +37303,23 @@ function initChat() {
   var layout = document.getElementById('saWaLayout');
   if (layout) layout.classList.remove('chat-active');
   // মোবাইলে চ্যাটলিস্ট fullscreen — topbar/bottom-nav লুকাও
-  if (window.innerWidth <= 768 && typeof saHideChrome === 'function') saHideChrome();
+  // saHideChrome() call করি না — ওটা history.pushState করে যা extra back step তৈরি করে
+  // চ্যাটলিস্টের জন্য শুধু visually hide করাই দরকার
+  if (window.innerWidth <= 768) {
+    window._saMobileView = 'list';
+    var _tp = document.querySelector('#superAdminWrapper .sa-layout-topbar');
+    var _bn = document.getElementById('saMobileBottomNav');
+    var _fb = document.getElementById('quickNoteFab');
+    if (_tp) _tp.style.display = 'none';
+    if (_bn) _bn.style.display = 'none';
+    if (_fb) _fb.style.display = 'none';
+    var _wr = document.getElementById('superAdminWrapper');
+    if (_wr) _wr.classList.add('inbox-open');
+    document.body.classList.add('sa-inbox-open');
+    document.documentElement.style.overflow = 'hidden';
+    document.documentElement.style.overscrollBehavior = 'none';
+    document.body.style.overscrollBehavior = 'none';
+  }
   // broadcast mode reset
   var secLiveChat = document.getElementById('sec-liveChat');
   if (secLiveChat) secLiveChat.classList.remove('broadcast-active');
@@ -37597,7 +37637,7 @@ function chatOpen(id) {
     layout.classList.add('chat-active');
     if (!window._saChatHistoryPushed) {
       window._saChatHistoryPushed = true;
-      history.pushState({ saChatView: true, chatId: id }, '');
+// (history push বাদ — _saMobileView দিয়ে handle)
     }
   }
   // মোবাইলে CSS cascade conflict এড়াতে সরাসরি inline দিয়ে fullscreen করো
@@ -37699,12 +37739,7 @@ function saHideChrome() {
   document.documentElement.style.overflow = 'hidden';
   document.documentElement.style.overscrollBehavior = 'none';
   document.body.style.overscrollBehavior = 'none';
-  // মোবাইলে back বাটন দিয়ে ফেরার জন্য history push করো
-  // চ্যাটলিস্টে ফিরে আসার সময় push করবো না (extra back entry হয়ে exit হয়)
-  if (!window._inboxHistoryPushed && !window._saBackToListMode) {
-    window._inboxHistoryPushed = true;
-    history.pushState({ saInboxOpen: true }, '');
-  }
+  // history push বাদ — _saMobileView দিয়ে mobile back handle হবে
 }
 
 function saShowChrome() {
@@ -37723,6 +37758,7 @@ function saShowChrome() {
   document.documentElement.style.overscrollBehavior = '';
   document.body.style.overscrollBehavior = '';
   window._inboxHistoryPushed = false;
+  window._saMobileView = null;
 }
 
 function saChatBackToList() {
@@ -37731,9 +37767,18 @@ function saChatBackToList() {
                  document.querySelector('#superAdminWrapper .chat-layout');
   if (layout) layout.classList.remove('chat-active');
   window._saChatHistoryPushed = false;
-  // মোবাইলে চ্যাটলিস্টে ফিরলে chrome লুকানোই থাকবে
   if (window.innerWidth <= 768) {
-    if (typeof saHideChrome === 'function') saHideChrome();
+    window._saMobileView = 'list';
+    var _tp3 = document.querySelector('#superAdminWrapper .sa-layout-topbar');
+    var _bn3 = document.getElementById('saMobileBottomNav');
+    if (_tp3) _tp3.style.display = 'none';
+    if (_bn3) _bn3.style.display = 'none';
+    var _wr3 = document.getElementById('superAdminWrapper');
+    if (_wr3) _wr3.classList.add('inbox-open');
+    document.body.classList.add('sa-inbox-open');
+    document.documentElement.style.overflow = 'hidden';
+    document.documentElement.style.overscrollBehavior = 'none';
+    document.body.style.overscrollBehavior = 'none';
   } else {
     saShowChrome();
   }
