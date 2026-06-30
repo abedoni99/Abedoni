@@ -35226,7 +35226,14 @@ function saExitLiveChat() {
   if (typeof saDesktopCloseConv === 'function') saDesktopCloseConv();
   const saBackBtn = document.getElementById('saLiveChatBackBtn');
   if (saBackBtn) saBackBtn.style.display = 'none';
-  // মোবাইলে chrome ফিরিয়ে দাও আগে
+  // মিনিমাইজের সময় কোন view এ ছিলাম সেটা সেভ করো
+  const saLayout = document.querySelector('#superAdminWrapper .sa-wa-layout');
+  const wasInInbox = saLayout && saLayout.classList.contains('chat-active');
+  window._saExitFromInbox = wasInInbox;
+  window._saExitChatId = wasInInbox
+    ? (p3state && p3state.activeChatId) || (state && state.currentChatAdmin) || null
+    : null;
+  // মোবাইলে chrome ফিরিয়ে দাও
   if (window.innerWidth <= 768 && typeof saShowChrome === 'function') saShowChrome();
   goTo('dashboard', document.querySelector('#superAdminWrapper .sb-item[onclick*="dashboard"]') || null);
   // নিচে ডানে chat bubble দেখাও
@@ -35239,6 +35246,17 @@ function saRestoreToLiveChat() {
   const bbl = document.getElementById('saLiveChatMiniBubble');
   if (bbl) bbl.style.display = 'none';
   goTo('liveChat', document.querySelector('#superAdminWrapper .sb-item[onclick*="liveChat"]') || null);
+  // ইনবক্স থেকে minimize হয়ে থাকলে সরাসরি সেই contact-এ ফিরো
+  if (window._saExitFromInbox && window._saExitChatId) {
+    // goTo → initChat চলে, তাই একটু পরে selectChatAdmin কল করো
+    setTimeout(function() {
+      if (typeof selectChatAdmin === 'function') {
+        selectChatAdmin(window._saExitChatId);
+      }
+      window._saExitFromInbox = false;
+      window._saExitChatId = null;
+    }, 50);
+  }
 }
 
 function _saUpdateChatBubbleUnread() {
