@@ -35223,16 +35223,25 @@ function saDesktopCloseConv() {
 
 /* ── চ্যাট লিস্ট থেকে সম্পূর্ণ বের হওয়া (ডেস্কটপ topbar back বাটন) ── */
 function saExitLiveChat() {
+  // saDesktopCloseConv() ডাকার আগেই chat-active ও ID save করো
+  const saLayout = document.getElementById('saWaLayout') ||
+                   document.querySelector('#superAdminWrapper .sa-wa-layout');
+  const wasInInbox = !!(saLayout && saLayout.classList.contains('chat-active'));
+  const chatId = (p3state && p3state.activeChatId) ||
+                 (typeof state !== 'undefined' && state && state.currentChatAdmin) || null;
+  window._saExitFromInbox = wasInInbox;
+  window._saExitChatId = wasInInbox ? chatId : null;
+  // sessionStorage এও save করো — window var হারিয়ে গেলেও কাজ করবে
+  try {
+    if (wasInInbox && chatId) {
+      sessionStorage.setItem('_saRestoreInboxId', String(chatId));
+    } else {
+      sessionStorage.removeItem('_saRestoreInboxId');
+    }
+  } catch(e) {}
   if (typeof saDesktopCloseConv === 'function') saDesktopCloseConv();
   const saBackBtn = document.getElementById('saLiveChatBackBtn');
   if (saBackBtn) saBackBtn.style.display = 'none';
-  // মিনিমাইজের সময় কোন view এ ছিলাম সেটা সেভ করো
-  const saLayout = document.querySelector('#superAdminWrapper .sa-wa-layout');
-  const wasInInbox = saLayout && saLayout.classList.contains('chat-active');
-  window._saExitFromInbox = wasInInbox;
-  window._saExitChatId = wasInInbox
-    ? (p3state && p3state.activeChatId) || (state && state.currentChatAdmin) || null
-    : null;
   // মোবাইলে chrome ফিরিয়ে দাও
   if (window.innerWidth <= 768 && typeof saShowChrome === 'function') saShowChrome();
   goTo('dashboard', document.querySelector('#superAdminWrapper .sb-item[onclick*="dashboard"]') || null);
@@ -35246,34 +35255,21 @@ function saRestoreToLiveChat() {
   const bbl = document.getElementById('saLiveChatMiniBubble');
   if (bbl) bbl.style.display = 'none';
 
-  // ইনবক্স থেকে minimize হয়েছিল — initChat bypass করে সরাসরি ইনবক্সে ফিরো
+  // window var অথবা sessionStorage যেটা পাওয়া যায়
+  let _restoreId = null;
   if (window._saExitFromInbox && window._saExitChatId) {
-    const savedId = window._saExitChatId;
+    _restoreId = window._saExitChatId;
+  }
+  if (!_restoreId) {
+    try { _restoreId = sessionStorage.getItem('_saRestoreInboxId') || null; } catch(e) {}
+  }
+  if (_restoreId) {
+    window._saRestoreInboxId = _restoreId;
     window._saExitFromInbox = false;
     window._saExitChatId = null;
-    // liveChat section টা active করো (goTo, কিন্তু initChat চালাবো না)
-    const wrapper = document.getElementById('superAdminWrapper');
-    if (wrapper) {
-      // সব section লুকাও
-      wrapper.querySelectorAll('.sa-section, [id^="sec-"]').forEach(function(s){ s.classList.remove('active'); });
-      const liveSec = document.getElementById('sec-liveChat');
-      if (liveSec) liveSec.classList.add('active');
-    }
-    window._saCurrentKey = 'liveChat';
-    // sidebar highlight
-    const sbEl = document.querySelector('#superAdminWrapper .sb-item[onclick*="liveChat"]');
-    if (sbEl) {
-      document.querySelectorAll('#superAdminWrapper .sb-item').forEach(function(i){ i.classList.remove('active'); });
-      sbEl.classList.add('active');
-    }
-    // মোবাইলে chrome লুকাও
-    if (window.innerWidth <= 768 && typeof saHideChrome === 'function') saHideChrome();
-    // সরাসরি সেই contact এ যাও (initChat এর reset ছাড়া)
-    if (typeof selectChatAdmin === 'function') selectChatAdmin(savedId);
-    return;
+    try { sessionStorage.removeItem('_saRestoreInboxId'); } catch(e) {}
   }
 
-  // চ্যাটলিস্ট থেকে minimize ছিল — স্বাভাবিকভাবে liveChat এ ফিরো
   goTo('liveChat', document.querySelector('#superAdminWrapper .sb-item[onclick*="liveChat"]') || null);
 }
 
@@ -37261,6 +37257,14 @@ function bingDeleteHistory(i) {
    LIVE CHAT
 ================================================================ */
 function initChat() {
+  // ইনবক্স restore mode — reset skip করে সরাসরি সেই contact এ যাও
+  if (window._saRestoreInboxId) {
+    var _rid = window._saRestoreInboxId;
+    window._saRestoreInboxId = null;
+    if (window.innerWidth <= 768 && typeof saHideChrome === 'function') saHideChrome();
+    if (typeof selectChatAdmin === 'function') selectChatAdmin(_rid);
+    return;
+  }
   // চ্যাট section খোলার সময় fresh state — inbox close করো
   var head = document.getElementById('saChatMainHead');
   var noConv = document.getElementById('saChatNoConv');
