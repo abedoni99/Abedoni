@@ -37721,7 +37721,10 @@ function chatOpen(id) {
   }, 80);
 
   // মোবাইলে topbar ও bottom nav লুকাও
-  if (window.innerWidth <= 768) saHideChrome();
+  if (window.innerWidth <= 768) {
+    window._saMobileView = 'inbox';
+    saHideChrome();
+  }
 }
 
 function saHideChrome() {
