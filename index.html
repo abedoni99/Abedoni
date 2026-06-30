@@ -35143,6 +35143,7 @@ function selectChatAdmin(id) {
 }
 
 function saGoBackToList() {
+  window._saBackToListMode = true;
   // নতুন sa-wa-layout এবং পুরনো chat-layout উভয় সাপোর্ট করো
   const saLayout = document.getElementById('saWaLayout') ||
                    document.querySelector('#superAdminWrapper .sa-wa-layout') ||
@@ -35187,11 +35188,11 @@ function saGoBackToList() {
   document.querySelectorAll('#saChatContactList .chat-contact').forEach(c => c.classList.remove('active'));
 
   // ওয়েব ভিউতে (desktop) chat list-এ ফিরে আসার পর history-তে panel state রাখো
-  // যাতে পরের back বাটনে switchPanel handler dashboard-এ নিয়ে যেতে পারে
   if (window.innerWidth > 768) {
     const panelName = (typeof _currentPanel !== 'undefined' && _currentPanel) ? _currentPanel : 'liveChat';
     history.replaceState({ panel: panelName }, '', '#' + panelName);
   }
+  window._saBackToListMode = false;
 }
 
 function saDesktopCloseConv() {
@@ -37699,7 +37700,8 @@ function saHideChrome() {
   document.documentElement.style.overscrollBehavior = 'none';
   document.body.style.overscrollBehavior = 'none';
   // মোবাইলে back বাটন দিয়ে ফেরার জন্য history push করো
-  if (!window._inboxHistoryPushed) {
+  // চ্যাটলিস্টে ফিরে আসার সময় push করবো না (extra back entry হয়ে exit হয়)
+  if (!window._inboxHistoryPushed && !window._saBackToListMode) {
     window._inboxHistoryPushed = true;
     history.pushState({ saInboxOpen: true }, '');
   }
@@ -37724,6 +37726,7 @@ function saShowChrome() {
 }
 
 function saChatBackToList() {
+  window._saBackToListMode = true;
   const layout = document.querySelector('#superAdminWrapper .sa-wa-layout') ||
                  document.querySelector('#superAdminWrapper .chat-layout');
   if (layout) layout.classList.remove('chat-active');
@@ -37734,6 +37737,7 @@ function saChatBackToList() {
   } else {
     saShowChrome();
   }
+  window._saBackToListMode = false;
   // inline fullscreen স্টাইল রিসেট করো
   const chatMainEl2 = document.getElementById('chatMainArea');
   if (chatMainEl2) {
