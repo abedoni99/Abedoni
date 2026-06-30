@@ -19446,6 +19446,10 @@ window.addEventListener('popstate', function(e) {
   if (saSection && saSection.classList.contains('sa-open')) return;
   if (layout && layout.classList.contains('chat-active')) return;
 
+  // Super Admin প্যানেল খোলা থাকলে SA popstate handler সামলাবে
+  const saWrapper = document.getElementById('superAdminWrapper');
+  if (saWrapper && saWrapper.style.display !== 'none') return;
+
   if (e.state && e.state.panel) {
     switchPanel(e.state.panel, true);
   } else {
@@ -20704,6 +20708,10 @@ function _chatPushHistory() {
   }
 }
 window.addEventListener('popstate', function(e) {
+  // Super Admin প্যানেল খোলা থাকলে SA popstate handler সামলাবে
+  const _saWrap = document.getElementById('superAdminWrapper');
+  if (_saWrap && _saWrap.style.display !== 'none') return;
+
   const layout    = document.getElementById('clientChatLayout');
   const saSection = document.getElementById('saChatSection');
   const normalWin = document.getElementById('normalChatWindow');
